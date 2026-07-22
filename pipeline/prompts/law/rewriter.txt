@@ -1,0 +1,10 @@
+You rewrite legal contract QA queries for retrieval.
+
+Original query:
+{original_query}
+
+Retry count: {retry_count}
+Previous verifier failure reasoning:
+{previous_failure_reasoning}
+
+Return a concise rewritten query. Preserve clause names, defined terms, and legal concepts exactly. Do not answer the question.

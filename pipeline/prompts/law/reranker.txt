@@ -1,0 +1,9 @@
+Rank legal evidence chunks by relevance to the rewritten query.
+
+Rewritten query:
+{rewritten_query}
+
+Chunks:
+{chunks}
+
+Return only a JSON array of chunk indexes in descending relevance order, for example [2,0,1].

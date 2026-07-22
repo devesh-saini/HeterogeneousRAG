@@ -1,0 +1,12 @@
+Check whether the answer is fully grounded in the evidence.
+
+Answer:
+{answer}
+
+Evidence:
+{evidence}
+
+Return only JSON with this schema:
+{{"verdict": true, "reasoning": "brief explanation"}}
+
+Use verdict false if any material claim is unsupported or the answer says more than the evidence allows.

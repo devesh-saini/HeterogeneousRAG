@@ -1,0 +1,9 @@
+Answer the financial question using only the supplied evidence.
+
+Question:
+{rewritten_query}
+
+Evidence:
+{evidence}
+
+If the evidence is insufficient, say "Insufficient evidence." Do not infer financial figures or accounting treatment beyond the evidence.

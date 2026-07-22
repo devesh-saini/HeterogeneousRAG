@@ -1,0 +1,12 @@
+Check whether the financial answer is fully grounded in the evidence.
+
+Answer:
+{answer}
+
+Evidence:
+{evidence}
+
+Return only JSON with this schema:
+{{"verdict": true, "reasoning": "brief explanation"}}
+
+Use verdict false if any material financial claim is unsupported.

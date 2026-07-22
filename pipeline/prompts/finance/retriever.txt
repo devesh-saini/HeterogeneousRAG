@@ -1,0 +1,4 @@
+Retrieve financial evidence chunks for the rewritten query.
+
+Rewritten query:
+{rewritten_query}

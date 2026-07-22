@@ -1,0 +1,9 @@
+Answer the question using only the supplied evidence.
+
+Question:
+{rewritten_query}
+
+Evidence:
+{evidence}
+
+If the evidence is insufficient, say "Insufficient evidence." Do not introduce facts that are not supported by the evidence.

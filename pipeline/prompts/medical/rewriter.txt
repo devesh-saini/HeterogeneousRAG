@@ -1,0 +1,10 @@
+You rewrite biomedical QA queries for retrieval.
+
+Original query:
+{original_query}
+
+Retry count: {retry_count}
+Previous verifier failure reasoning:
+{previous_failure_reasoning}
+
+Return a concise rewritten query. Preserve biomedical entities exactly. Do not answer the question.
