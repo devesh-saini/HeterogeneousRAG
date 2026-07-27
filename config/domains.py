@@ -21,7 +21,7 @@ class DomainSpec:
 
 
 DOMAINS: dict[DomainName, DomainSpec] = {
-    "cs": DomainSpec("cs", "allenai/qasper", VECTORDB_ROOT / "cs", "cs"),
+    "computerScience": DomainSpec("computerScience", "allenai/qasper", VECTORDB_ROOT / "computerScience", "computerScience"),
     "medical": DomainSpec(
         "medical", "rag-datasets/rag-mini-bioasq", VECTORDB_ROOT / "medical", "medical"
     ),

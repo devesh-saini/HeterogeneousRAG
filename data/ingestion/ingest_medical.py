@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    sys.path.append(str(Path(__file__).resolve().parents[2]))
+
 from datasets import load_dataset
 
 from config.domains import get_domain
@@ -11,8 +17,8 @@ def _extract_document(row: dict) -> str:
 
 
 def ingest() -> int:
-    dataset = load_dataset(get_domain("medical").dataset_id, "corpus")
-    split = dataset["train"] if "train" in dataset else next(iter(dataset.values()))
+    dataset = load_dataset(get_domain("medical").dataset_id, "text-corpus")
+    split = dataset["passages"] if "passages" in dataset else next(iter(dataset.values()))
     return embed_corpus(get_domain("medical"), (_extract_document(row) for row in split))
 
 

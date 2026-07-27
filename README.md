@@ -101,10 +101,10 @@ GROQ_API_KEY=your_key_here
 Run ingestion once per domain before evaluating that domain:
 
 ```bash
-python data/ingestion/ingest_cs.py
-python data/ingestion/ingest_medical.py
-python data/ingestion/ingest_law.py
-python data/ingestion/ingest_finance.py
+python -m data.ingestion.ingest_cs
+python -m data.ingestion.ingest_medical
+python -m data.ingestion.ingest_law
+python -m data.ingestion.ingest_finance
 ```
 
 Each script downloads the Hugging Face dataset, chunks documents, embeds chunks locally with `sentence-transformers/all-MiniLM-L6-v2`, and persists a ChromaDB collection under `vectordb/<domain>/`.

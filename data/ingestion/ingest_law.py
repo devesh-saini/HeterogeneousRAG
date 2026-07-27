@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from datasets import load_dataset
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from config.domains import get_domain
 from data.ingestion.common import embed_corpus
-
-
-def _extract_context(row: dict) -> str:
-    return str(row.get("context") or row.get("contract") or row.get("text") or "")
+from data.ingestion.sources import load_cuad_contexts
 
 
 def ingest() -> int:
-    dataset = load_dataset(get_domain("law").dataset_id)
-    split = dataset["train"] if "train" in dataset else next(iter(dataset.values()))
-    return embed_corpus(get_domain("law"), (_extract_context(row) for row in split))
+    return embed_corpus(get_domain("law"), load_cuad_contexts())
 
 
 if __name__ == "__main__":

@@ -49,6 +49,8 @@ def embed_corpus(domain: DomainSpec, documents: Iterable[str], batch_size: int =
     collection = client.get_or_create_collection(domain.collection_name)
     embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     chunks = [chunk for doc in dedupe_texts(documents) for chunk in chunk_text(doc)]
+    if not chunks:
+        raise ValueError(f"No text chunks were produced for domain '{domain.name}'")
     for start in tqdm(range(0, len(chunks), batch_size), desc=f"Embedding {domain.name}"):
         batch = chunks[start : start + batch_size]
         embeddings = embedder.encode(batch, normalize_embeddings=True).tolist()
