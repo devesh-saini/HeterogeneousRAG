@@ -26,6 +26,12 @@ CREATE TABLE IF NOT EXISTS results (
     total_cost_usd REAL,
     total_latency_ms INTEGER,
     node_metadata TEXT,
+    original_query TEXT,
+    rewritten_query TEXT,
+    gold_evidence TEXT,
+    retrieved_chunks TEXT,
+    retrieved_metadata TEXT,
+    verification_result TEXT,
     synthesized_answer TEXT,
     gold_answer TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -60,6 +66,19 @@ def _ensure_db():
     engine = create_engine(f"sqlite:///{RESULTS_DB_PATH}")
     with engine.begin() as conn:
         conn.execute(text(CREATE_RESULTS_TABLE))
+        existing_columns = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(results)")).fetchall()
+        }
+        for column_name in (
+            "original_query",
+            "rewritten_query",
+            "gold_evidence",
+            "retrieved_chunks",
+            "retrieved_metadata",
+            "verification_result",
+        ):
+            if column_name not in existing_columns:
+                conn.execute(text(f"ALTER TABLE results ADD COLUMN {column_name} TEXT"))
     return engine
 
 
@@ -98,7 +117,9 @@ def run_evaluation(
         answer = result.get("synthesized_answer", "")
         em_score = exact_match(answer, pair.answer)
         f1_score = token_f1(answer, pair.answer)
-        recall = retrieval_recall(result.get("retrieved_chunks", []), pair.evidence)
+        retrieved_chunks = result.get("retrieved_chunks", [])
+        retrieved_metadata = result.get("retrieved_metadata", [])
+        recall = retrieval_recall(retrieved_chunks, pair.evidence, retrieved_metadata)
         metadata = result.get("metadata", {})
         total_cost, node_latency_ms = _metadata_totals(metadata)
         total_latency_ms = max(wall_latency_ms, node_latency_ms)
@@ -115,12 +136,16 @@ def run_evaluation(
                         question_id, domain, config_name, model_assignment,
                         em_score, f1_score, retrieval_recall, retry_count, hallucination,
                         total_cost_usd, total_latency_ms, node_metadata,
+                        original_query, rewritten_query, gold_evidence,
+                        retrieved_chunks, retrieved_metadata, verification_result,
                         synthesized_answer, gold_answer
                     )
                     VALUES (
                         :question_id, :domain, :config_name, :model_assignment,
                         :em_score, :f1_score, :retrieval_recall, :retry_count, :hallucination,
                         :total_cost_usd, :total_latency_ms, :node_metadata,
+                        :original_query, :rewritten_query, :gold_evidence,
+                        :retrieved_chunks, :retrieved_metadata, :verification_result,
                         :synthesized_answer, :gold_answer
                     )
                     """
@@ -138,6 +163,12 @@ def run_evaluation(
                     "total_cost_usd": total_cost,
                     "total_latency_ms": total_latency_ms,
                     "node_metadata": json.dumps(metadata),
+                    "original_query": pair.question,
+                    "rewritten_query": result.get("rewritten_query", ""),
+                    "gold_evidence": json.dumps(pair.evidence),
+                    "retrieved_chunks": json.dumps(retrieved_chunks),
+                    "retrieved_metadata": json.dumps(retrieved_metadata),
+                    "verification_result": json.dumps(result.get("verification_result", {})),
                     "synthesized_answer": answer,
                     "gold_answer": pair.answer,
                 },

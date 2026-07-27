@@ -20,11 +20,11 @@ HOMOGENEOUS_CONFIG: dict[RoleName, str] = {
 }
 
 HETEROGENEOUS_CONFIG: dict[RoleName, str] = {
-    "rewriter": "ollama/qwen2.5:7b",
-    "retriever": "ollama/qwen2.5:7b",
-    "reranker": "ollama/qwen2.5:7b",
-    "synthesizer": "groq/llama-3.1-70b-versatile",
-    "verifier": "groq/llama-3.1-70b-versatile",
+    "rewriter": "groq/openai/gpt-oss-20b",
+    "retriever": "groq/openai/gpt-oss-20b",
+    "reranker": "groq/openai/gpt-oss-20b",
+    "synthesizer": "groq/openai/gpt-oss-120b",
+    "verifier": "groq/openai/gpt-oss-120b",
 }
 
 MODEL_CONFIGS: dict[ConfigName, dict[RoleName, str]] = {

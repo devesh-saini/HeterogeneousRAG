@@ -109,6 +109,8 @@ python -m data.ingestion.ingest_finance
 
 Each script downloads the Hugging Face dataset, chunks documents, embeds chunks locally with `sentence-transformers/all-MiniLM-L6-v2`, and persists a ChromaDB collection under `vectordb/<domain>/`.
 
+Re-run ingestion after changes to corpus metadata or train/test split coverage. Retrieval recall for medical uses stored passage IDs, so older medical vector DBs created before metadata support should be regenerated.
+
 ## Run Experiments
 
 Run a homogeneous baseline:
@@ -140,6 +142,18 @@ homogeneous, heterogeneous
 ## Logged Metrics
 
 Results are written to `evaluation/results.db`.
+
+Summarize results without the `sqlite3` CLI:
+
+```bash
+python -m evaluation.summarize_results --recent 10
+```
+
+Inspect one result row:
+
+```bash
+python -m evaluation.inspect_result 34
+```
 
 The runner logs:
 

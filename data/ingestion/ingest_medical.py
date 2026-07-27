@@ -9,7 +9,7 @@ if __package__ in {None, ""}:
 from datasets import load_dataset
 
 from config.domains import get_domain
-from data.ingestion.common import embed_corpus
+from data.ingestion.common import IngestDocument, embed_corpus
 
 
 def _extract_document(row: dict) -> str:
@@ -19,7 +19,16 @@ def _extract_document(row: dict) -> str:
 def ingest() -> int:
     dataset = load_dataset(get_domain("medical").dataset_id, "text-corpus")
     split = dataset["passages"] if "passages" in dataset else next(iter(dataset.values()))
-    return embed_corpus(get_domain("medical"), (_extract_document(row) for row in split))
+    return embed_corpus(
+        get_domain("medical"),
+        (
+            IngestDocument(
+                _extract_document(row),
+                {"source_id": str(row.get("id", "")), "source_type": "passage"},
+            )
+            for row in split
+        ),
+    )
 
 
 if __name__ == "__main__":

@@ -33,8 +33,11 @@ def retriever_node(state: RAGState, top_k: int = 5) -> RAGState:
     client = chromadb.PersistentClient(path=str(domain.vectordb_path))
     collection = client.get_or_create_collection(domain.collection_name)
     embedding = get_embedder().encode([query], normalize_embeddings=True).tolist()[0]
-    result = collection.query(query_embeddings=[embedding], n_results=top_k)
+    result = collection.query(
+        query_embeddings=[embedding], n_results=top_k, include=["documents", "metadatas"]
+    )
     chunks = result.get("documents", [[]])[0]
+    metadatas = result.get("metadatas", [[]])[0]
     latency_ms = int((time.perf_counter() - start) * 1000)
     metadata = add_node_metadata(
         state,
@@ -43,6 +46,6 @@ def retriever_node(state: RAGState, top_k: int = 5) -> RAGState:
         input_text=query,
         output_text="\n\n".join(chunks),
         latency_ms=latency_ms,
-        extra={"top_k": top_k},
+        extra={"top_k": top_k, "retrieved_metadata": metadatas},
     )
-    return {"retrieved_chunks": chunks, "metadata": metadata}
+    return {"retrieved_chunks": chunks, "retrieved_metadata": metadatas, "metadata": metadata}

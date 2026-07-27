@@ -13,6 +13,21 @@ def _first_answer(answers: object) -> dict:
     return {}
 
 
+def _answer_text(answer: dict) -> str:
+    if answer.get("unanswerable"):
+        return "unanswerable"
+    free_form = str(answer.get("free_form_answer") or "").strip()
+    if free_form:
+        return free_form
+    extractive_spans = answer.get("extractive_spans")
+    if isinstance(extractive_spans, list) and extractive_spans:
+        return normalize_answer_value(extractive_spans)
+    yes_no = answer.get("yes_no")
+    if yes_no is not None:
+        return str(yes_no)
+    return normalize_answer_value(answer)
+
+
 def load_qa_pairs(limit: int | None = None) -> list[QAPair]:
     pairs: list[QAPair] = []
     for paper in load_qasper_documents("validation"):
@@ -25,7 +40,7 @@ def load_qa_pairs(limit: int | None = None) -> list[QAPair]:
             pair = QAPair(
                 str(qa.get("question_id", len(pairs))),
                 question,
-                normalize_answer_value(answer),
+                _answer_text(answer),
                 list(evidence) if isinstance(evidence, list) else [str(evidence)],
             )
             if pair.question and pair.answer:

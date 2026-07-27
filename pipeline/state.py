@@ -11,6 +11,7 @@ class RAGState(TypedDict, total=False):
 
     rewritten_query: str
     retrieved_chunks: list[str]
+    retrieved_metadata: list[dict[str, Any]]
     reranked_chunks: list[str]
     synthesized_answer: str
     verification_result: dict[str, Any]

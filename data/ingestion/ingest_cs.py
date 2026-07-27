@@ -7,7 +7,7 @@ if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from config.domains import get_domain
-from data.ingestion.common import embed_corpus
+from data.ingestion.common import IngestDocument, embed_corpus
 from data.ingestion.sources import load_qasper_documents
 
 
@@ -41,8 +41,17 @@ def _extract_document(row: dict) -> str:
 
 
 def ingest() -> int:
+    documents = [
+        IngestDocument(
+            _extract_document(row),
+            {"source_id": str(row.get("id", "")), "source_split": split},
+        )
+        for split in ("train", "validation")
+        for row in load_qasper_documents(split)
+    ]
     return embed_corpus(
-        get_domain("computerScience"), (_extract_document(row) for row in load_qasper_documents())
+        get_domain("computerScience"),
+        documents,
     )
 
 

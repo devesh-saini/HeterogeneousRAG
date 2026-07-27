@@ -9,7 +9,7 @@ if __package__ in {None, ""}:
 from datasets import load_dataset
 
 from config.domains import get_domain
-from data.ingestion.common import embed_corpus
+from data.ingestion.common import IngestDocument, embed_corpus
 
 
 def _extract_evidence_text(evidence: object) -> str:
@@ -35,7 +35,19 @@ def _extract_context(row: dict) -> str:
 def ingest() -> int:
     dataset = load_dataset(get_domain("finance").dataset_id)
     split = dataset["train"] if "train" in dataset else next(iter(dataset.values()))
-    return embed_corpus(get_domain("finance"), (_extract_context(row) for row in split))
+    return embed_corpus(
+        get_domain("finance"),
+        (
+            IngestDocument(
+                _extract_context(row),
+                {
+                    "source_id": str(row.get("financebench_id", "")),
+                    "doc_name": str(row.get("doc_name", "")),
+                },
+            )
+            for row in split
+        ),
+    )
 
 
 if __name__ == "__main__":
