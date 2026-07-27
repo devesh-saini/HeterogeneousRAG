@@ -1,0 +1,25 @@
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+heterorag/
+
+# Local generated data
+vectordb/
+evaluation/*.db
+evaluation/*.db-*
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
