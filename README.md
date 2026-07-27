@@ -114,19 +114,21 @@ Each script downloads the Hugging Face dataset, chunks documents, embeds chunks 
 Run a homogeneous baseline:
 
 ```bash
-python main.py --domain cs --config homogeneous --n_questions 200
+python main.py --domain computerScience --config homogeneous --n_questions 200
 ```
 
 Run a heterogeneous experiment:
 
 ```bash
-python main.py --domain cs --config heterogeneous --n_questions 200
+python main.py --domain computerScience --config heterogeneous --n_questions 200
 ```
 
 Valid domains:
 
 ```text
-cs, medical, law, finance
+computerScience, medical, law, finance
+
+`cs` is also accepted as a backward-compatible alias for `computerScience`.
 ```
 
 Valid configs:

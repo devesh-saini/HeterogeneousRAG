@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 
-DomainName = Literal["cs", "medical", "law", "finance"]
+DomainName = Literal["cs", "computerScience", "medical", "law", "finance"]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 VECTORDB_ROOT = PROJECT_ROOT / "vectordb"
@@ -20,8 +20,16 @@ class DomainSpec:
     collection_name: str
 
 
+COMPUTER_SCIENCE_DOMAIN = DomainSpec(
+    "computerScience",
+    "allenai/qasper",
+    VECTORDB_ROOT / "computerScience",
+    "computerScience",
+)
+
 DOMAINS: dict[DomainName, DomainSpec] = {
-    "computerScience": DomainSpec("computerScience", "allenai/qasper", VECTORDB_ROOT / "computerScience", "computerScience"),
+    "cs": COMPUTER_SCIENCE_DOMAIN,
+    "computerScience": COMPUTER_SCIENCE_DOMAIN,
     "medical": DomainSpec(
         "medical", "rag-datasets/rag-mini-bioasq", VECTORDB_ROOT / "medical", "medical"
     ),

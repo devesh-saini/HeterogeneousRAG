@@ -12,11 +12,11 @@ ConfigName = Literal["homogeneous", "heterogeneous"]
 
 
 HOMOGENEOUS_CONFIG: dict[RoleName, str] = {
-    "rewriter": "ollama/qwen2.5:7b",
-    "retriever": "ollama/qwen2.5:7b",
-    "reranker": "ollama/qwen2.5:7b",
-    "synthesizer": "ollama/qwen2.5:7b",
-    "verifier": "ollama/qwen2.5:7b",
+    "rewriter": "groq/openai/gpt-oss-20b",
+    "retriever": "groq/openai/gpt-oss-20b",
+    "reranker": "groq/openai/gpt-oss-20b",
+    "synthesizer": "groq/openai/gpt-oss-20b",
+    "verifier": "groq/openai/gpt-oss-20b",
 }
 
 HETEROGENEOUS_CONFIG: dict[RoleName, str] = {
@@ -36,6 +36,7 @@ MODEL_CONFIGS: dict[ConfigName, dict[RoleName, str]] = {
 # Values are USD per 1M tokens.
 MODEL_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
     "ollama/qwen2.5:7b": {"input": 0.0, "output": 0.0},
+    "groq/llama-3.1-8b-instant": {"input": 0.0, "output": 0.0},
     "groq/llama-3.1-70b-versatile": {"input": 0.0, "output": 0.0},
     "groq/qwen2.5-72b": {"input": 0.0, "output": 0.0},
 }

@@ -43,6 +43,9 @@ except ModuleNotFoundError:
 def _load_pairs(domain: str, limit: int | None) -> list[QAPair]:
     loaders: dict[str, Callable[[int | None], list[QAPair]]] = {
         "cs": __import__("data.evaluation.load_cs", fromlist=["load_qa_pairs"]).load_qa_pairs,
+        "computerScience": __import__(
+            "data.evaluation.load_cs", fromlist=["load_qa_pairs"]
+        ).load_qa_pairs,
         "medical": __import__("data.evaluation.load_medical", fromlist=["load_qa_pairs"]).load_qa_pairs,
         "law": __import__("data.evaluation.load_law", fromlist=["load_qa_pairs"]).load_qa_pairs,
         "finance": __import__("data.evaluation.load_finance", fromlist=["load_qa_pairs"]).load_qa_pairs,
