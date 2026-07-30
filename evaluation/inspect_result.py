@@ -92,7 +92,11 @@ def main() -> None:
                 f"domain={row_dict['domain']}",
                 f"config={row_dict['config_name']}",
                 f"question_id={row_dict['question_id']}",
+                f"evaluation={row_dict.get('evaluation_version') or 'legacy'}",
                 f"f1={row_dict['f1_score']}",
+                f"precision={row_dict.get('answer_precision')}",
+                f"recall={row_dict.get('answer_recall')}",
+                f"verbosity={row_dict.get('verbosity_ratio')}",
                 f"retrieval_recall={row_dict['retrieval_recall']}",
                 f"retries={row_dict['retry_count']}",
                 f"hallucination={row_dict['hallucination']}",
@@ -103,10 +107,29 @@ def main() -> None:
     _section("Models", row_dict.get("model_assignment"))
     _section("Question", question)
     _section("Rewritten Query", row_dict.get("rewritten_query"))
-    _section("Gold Answer", gold_answer)
+    gold_answers = _json_loads(row_dict.get("gold_answers"), [gold_answer])
+    _section("Reference Answers", json.dumps(gold_answers, indent=2))
+    _section("Answer Type", row_dict.get("answer_type") or "unknown")
     _section("Generated Answer", row_dict.get("synthesized_answer"))
     _section("Gold Evidence", json.dumps(gold_evidence, indent=2))
     _section("Verifier Result", json.dumps(verification_result, indent=2))
+    _section(
+        "Post-run Evaluation",
+        json.dumps(
+            {
+                "exact_match": row_dict.get("em_score"),
+                "max_reference_f1": row_dict.get("f1_score"),
+                "answer_precision": row_dict.get("answer_precision"),
+                "answer_recall": row_dict.get("answer_recall"),
+                "reference_contained": row_dict.get("reference_contained"),
+                "verbosity_ratio": row_dict.get("verbosity_ratio"),
+                "correctness_pass": row_dict.get("correctness_pass"),
+                "verifier_parse_success": row_dict.get("verifier_parse_success"),
+                "failure_category": row_dict.get("failure_category"),
+            },
+            indent=2,
+        ),
+    )
 
     print("\nRetrieved Chunks")
     print("----------------")

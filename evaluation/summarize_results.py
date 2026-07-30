@@ -7,12 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from config.domains import RESULTS_DB_PATH
+from evaluation.schema import RESULT_COLUMN_MIGRATIONS
 
 
 SUMMARY_QUERY = """
 SELECT
     domain,
     config_name,
+    COALESCE(evaluation_version, 'legacy') AS evaluation_version,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -23,6 +25,11 @@ SELECT
     COUNT(*) AS runs,
     ROUND(AVG(em_score), 4) AS avg_em,
     ROUND(AVG(f1_score), 4) AS avg_f1,
+    ROUND(AVG(answer_precision), 4) AS avg_answer_precision,
+    ROUND(AVG(answer_recall), 4) AS avg_answer_recall,
+    ROUND(AVG(reference_contained), 4) AS reference_containment_rate,
+    ROUND(AVG(verbosity_ratio), 2) AS avg_verbosity_ratio,
+    ROUND(AVG(correctness_pass), 4) AS correctness_rate,
     ROUND(MIN(f1_score), 4) AS min_f1,
     ROUND(MAX(f1_score), 4) AS max_f1,
     ROUND(AVG(CASE WHEN f1_score >= 0.5 THEN 1.0 ELSE 0.0 END), 4) AS f1_ge_0_5_rate,
@@ -32,19 +39,23 @@ SELECT
     ROUND(AVG(retry_count), 2) AS avg_retries,
     SUM(CASE WHEN retry_count > 0 THEN 1 ELSE 0 END) AS retried_runs,
     MAX(retry_count) AS max_retries,
-    ROUND(AVG(hallucination), 4) AS hallucination_rate,
+    ROUND(AVG(groundedness_pass), 4) AS groundedness_rate,
+    ROUND(AVG(relevance_pass), 4) AS relevance_rate,
+    ROUND(AVG(completeness_pass), 4) AS completeness_rate,
+    ROUND(AVG(verifier_parse_success), 4) AS verifier_parse_rate,
+    ROUND(AVG(hallucination), 4) AS unsupported_claim_rate,
     SUM(hallucination) AS hallucinations,
     ROUND(AVG(total_cost_usd), 6) AS avg_cost_usd,
     ROUND(SUM(total_cost_usd), 6) AS total_cost_usd,
     ROUND(AVG(total_latency_ms), 2) AS avg_latency_ms,
     MIN(total_latency_ms) AS min_latency_ms,
     MAX(total_latency_ms) AS max_latency_ms,
-    ROUND(AVG(json_extract(node_metadata, '$.rewriter.input_tokens')), 1) AS avg_rewriter_in,
-    ROUND(AVG(json_extract(node_metadata, '$.reranker.input_tokens')), 1) AS avg_reranker_in,
-    ROUND(AVG(json_extract(node_metadata, '$.synthesizer.input_tokens')), 1) AS avg_synthesizer_in,
-    ROUND(AVG(json_extract(node_metadata, '$.verifier.input_tokens')), 1) AS avg_verifier_in
+    ROUND(AVG(COALESCE(json_extract(node_metadata, '$.latest.rewriter.input_tokens'), json_extract(node_metadata, '$.rewriter.input_tokens'))), 1) AS avg_rewriter_in,
+    ROUND(AVG(COALESCE(json_extract(node_metadata, '$.latest.reranker.input_tokens'), json_extract(node_metadata, '$.reranker.input_tokens'))), 1) AS avg_reranker_in,
+    ROUND(AVG(COALESCE(json_extract(node_metadata, '$.latest.synthesizer.input_tokens'), json_extract(node_metadata, '$.synthesizer.input_tokens'))), 1) AS avg_synthesizer_in,
+    ROUND(AVG(COALESCE(json_extract(node_metadata, '$.latest.verifier.input_tokens'), json_extract(node_metadata, '$.verifier.input_tokens'))), 1) AS avg_verifier_in
 FROM results
-GROUP BY domain, config_name, model_assignment
+GROUP BY domain, config_name, model_assignment, COALESCE(evaluation_version, 'legacy')
 ORDER BY domain, config_name, models
 """
 
@@ -52,6 +63,7 @@ COMPACT_QUERY = """
 SELECT
     domain,
     config_name,
+    COALESCE(evaluation_version, 'legacy') AS evaluation_version,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -61,16 +73,21 @@ SELECT
     END AS models,
     COUNT(*) AS runs,
     ROUND(AVG(f1_score), 4) AS avg_f1,
-    ROUND(MAX(f1_score), 4) AS max_f1,
-    ROUND(AVG(CASE WHEN f1_score >= 0.5 THEN 1.0 ELSE 0.0 END), 4) AS good_answer_rate,
+    ROUND(AVG(answer_precision), 4) AS avg_precision,
+    ROUND(AVG(answer_recall), 4) AS avg_recall,
+    ROUND(AVG(verbosity_ratio), 2) AS avg_verbosity,
+    ROUND(AVG(correctness_pass), 4) AS correctness_rate,
     ROUND(AVG(retrieval_recall), 4) AS avg_retrieval,
     ROUND(AVG(CASE WHEN retrieval_recall > 0 THEN 1.0 ELSE 0.0 END), 4) AS retrieval_hit_rate,
     ROUND(AVG(retry_count), 2) AS avg_retries,
-    SUM(hallucination) AS hallucinations,
-    ROUND(AVG(hallucination), 4) AS hallucination_rate,
+    ROUND(AVG(groundedness_pass), 4) AS groundedness_rate,
+    ROUND(AVG(relevance_pass), 4) AS relevance_rate,
+    ROUND(AVG(completeness_pass), 4) AS completeness_rate,
+    ROUND(AVG(verifier_parse_success), 4) AS verifier_parse_rate,
+    ROUND(AVG(hallucination), 4) AS unsupported_claim_rate,
     ROUND(AVG(total_latency_ms), 2) AS avg_latency_ms
 FROM results
-GROUP BY domain, config_name, model_assignment
+GROUP BY domain, config_name, model_assignment, COALESCE(evaluation_version, 'legacy')
 ORDER BY domain, avg_f1 DESC
 """
 
@@ -78,6 +95,7 @@ FAILURE_QUERY = """
 SELECT
     domain,
     config_name,
+    COALESCE(evaluation_version, 'legacy') AS evaluation_version,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -89,10 +107,13 @@ SELECT
     SUM(CASE WHEN f1_score = 0 THEN 1 ELSE 0 END) AS zero_f1,
     SUM(CASE WHEN retrieval_recall = 0 THEN 1 ELSE 0 END) AS zero_retrieval,
     SUM(CASE WHEN retry_count >= 2 THEN 1 ELSE 0 END) AS max_retry_failures,
-    SUM(CASE WHEN hallucination = 1 THEN 1 ELSE 0 END) AS hallucinations,
-    ROUND(AVG(CASE WHEN hallucination = 1 THEN f1_score ELSE NULL END), 4) AS hallucination_avg_f1
+    SUM(CASE WHEN groundedness_pass = 0 THEN 1 ELSE 0 END) AS unsupported_claim_failures,
+    SUM(CASE WHEN relevance_pass = 0 THEN 1 ELSE 0 END) AS relevance_failures,
+    SUM(CASE WHEN completeness_pass = 0 THEN 1 ELSE 0 END) AS completeness_failures,
+    SUM(CASE WHEN verifier_parse_success = 0 THEN 1 ELSE 0 END) AS verifier_parse_failures,
+    SUM(CASE WHEN correctness_pass = 0 THEN 1 ELSE 0 END) AS correctness_failures
 FROM results
-GROUP BY domain, config_name, model_assignment
+GROUP BY domain, config_name, model_assignment, COALESCE(evaluation_version, 'legacy')
 ORDER BY domain, config_name, models
 """
 
@@ -101,6 +122,7 @@ SELECT
     id,
     domain,
     config_name,
+    COALESCE(evaluation_version, 'legacy') AS evaluation_version,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -111,9 +133,17 @@ SELECT
     question_id,
     ROUND(em_score, 4) AS em,
     ROUND(f1_score, 4) AS f1,
+    ROUND(answer_precision, 4) AS precision,
+    ROUND(answer_recall, 4) AS answer_recall,
+    ROUND(verbosity_ratio, 2) AS verbosity,
+    correctness_pass,
+    groundedness_pass,
+    relevance_pass,
+    completeness_pass,
+    verifier_parse_success,
     ROUND(retrieval_recall, 4) AS retrieval_recall,
     retry_count,
-    hallucination,
+    hallucination AS unsupported_claims,
     total_latency_ms,
     created_at
 FROM results
@@ -141,6 +171,17 @@ def _fetch(conn: sqlite3.Connection, query: str, params: tuple[object, ...] = ()
     cursor = conn.execute(query, params)
     headers = [description[0] for description in cursor.description or []]
     return headers, cursor.fetchall()
+
+
+def _ensure_analysis_columns(conn: sqlite3.Connection) -> None:
+    """Make legacy databases queryable without rewriting historical rows."""
+    existing_columns = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info(results)").fetchall()
+    }
+    for column_name, column_type in RESULT_COLUMN_MIGRATIONS.items():
+        if column_name not in existing_columns:
+            conn.execute(f"ALTER TABLE results ADD COLUMN {column_name} {column_type}")
+    conn.commit()
 
 
 def _json_loads(value: object, default: Any) -> Any:
@@ -223,6 +264,7 @@ def main() -> None:
         raise FileNotFoundError(f"Results database not found: {args.db}")
 
     with sqlite3.connect(args.db) as conn:
+        _ensure_analysis_columns(conn)
         headers, rows = _fetch(conn, SUMMARY_QUERY if args.full else COMPACT_QUERY)
         _print_table(headers, rows)
 

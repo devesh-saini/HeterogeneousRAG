@@ -1,9 +1,18 @@
-Answer the question using only the supplied evidence.
+Answer the original question using only the supplied evidence.
 
-Question:
+Original question:
+{original_query}
+
+Retrieval query (context only; do not answer a different question):
 {rewritten_query}
+
+Expected answer type:
+{answer_type}
 
 Evidence:
 {evidence}
 
-If the evidence is insufficient, say "Insufficient evidence." Do not introduce facts that are not supported by the evidence.
+Give only the shortest direct answer that completely answers the original question.
+Prefer a phrase, list, yes/no, or one concise sentence when sufficient.
+Do not restate the question, quote evidence, add background, headings, citations, or related facts.
+If the evidence is insufficient, say exactly "Insufficient evidence."

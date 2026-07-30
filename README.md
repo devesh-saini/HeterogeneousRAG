@@ -174,6 +174,38 @@ The runner logs:
 
 `node_metadata` contains per-node model, token estimate, cost estimate, and latency.
 
+### Reference-aware evaluation
+
+New runs use evaluation version `2.0-reference-aware`. Legacy rows remain in the
+database and are reported separately.
+
+- EM and token F1 are computed against every valid reference answer and use the
+  best matching reference.
+- `answer_precision` measures concision; `answer_recall` measures how much of the
+  reference answer was covered.
+- `reference_contained` identifies answers that contain a complete reference but
+  add extra material, and `verbosity_ratio` reports generated length relative to
+  the best-matching reference.
+- The verifier reports independent groundedness, relevance, and completeness
+  verdicts. Graph retries require all three to pass.
+- `hallucination` now means the groundedness check found unsupported content. It
+  is no longer inferred from a low lexical answer score.
+- Retry metadata is stored as an ordered `events` list with an attempt number;
+  `latest` provides convenient access to the final invocation of each node.
+
+Summaries keep legacy and reference-aware runs separate:
+
+```bash
+python -m evaluation.summarize_results --full --failures
+```
+
+Inspect all reference answers, verifier dimensions, and post-run scores for one
+result:
+
+```bash
+python -m evaluation.inspect_result RESULT_ID
+```
+
 ## Notes
 
 - Model pricing defaults to `0.0` in `config/models.py`. Update `MODEL_PRICING_USD_PER_1M` for cost-accurate Groq accounting.

@@ -8,7 +8,9 @@ def synthesizer_node(state: RAGState) -> RAGState:
     model_id = state["model_assignment"]["synthesizer"]
     prompt = render_prompt(
         load_prompt(state["domain"], "synthesizer"),
+        original_query=state["original_query"],
         rewritten_query=state["rewritten_query"],
+        answer_type=state.get("answer_type", "unknown"),
         evidence=state.get("reranked_chunks", []),
     )
     answer, latency_ms = invoke_llm(model_id, prompt)

@@ -45,8 +45,23 @@ def add_node_metadata(
     input_tokens = estimate_tokens(input_text)
     output_tokens = estimate_tokens(output_text)
     cost = estimate_cost_usd(model_id, input_tokens, output_tokens) if model_id else 0.0
-    metadata = dict(state.get("metadata", {}))
-    metadata[node_name] = {
+    existing = state.get("metadata", {})
+    if "events" in existing:
+        events = list(existing.get("events", []))
+        latest = dict(existing.get("latest", {}))
+    else:
+        # Upgrade legacy in-memory metadata shape without losing entries.
+        events = [
+            {"node": name, "attempt": 0, **details}
+            for name, details in existing.items()
+            if isinstance(details, dict)
+        ]
+        latest = {
+            name: details for name, details in existing.items() if isinstance(details, dict)
+        }
+    event = {
+        "node": node_name,
+        "attempt": int(state.get("retry_count", 0)),
         "model": model_id,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
@@ -54,7 +69,9 @@ def add_node_metadata(
         "latency_ms": latency_ms,
         **(extra or {}),
     }
-    return metadata
+    events.append(event)
+    latest[node_name] = event
+    return {"events": events, "latest": latest}
 
 
 def invoke_llm(model_id: str, prompt: str) -> tuple[str, int]:

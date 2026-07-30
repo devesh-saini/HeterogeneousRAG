@@ -5,7 +5,13 @@ import ast
 from datasets import load_dataset
 
 from config.domains import get_domain
-from data.evaluation.common import QAPair, first_present, normalize_answer_value
+from data.evaluation.common import (
+    QAPair,
+    first_present,
+    infer_answer_type,
+    normalize_answer_value,
+    reference_answers,
+)
 
 
 def _normalize_evidence_ids(value: object) -> list[str]:
@@ -28,7 +34,9 @@ def load_qa_pairs(limit: int | None = None) -> list[QAPair]:
     pairs: list[QAPair] = []
     for i, row in enumerate(split):
         question = str(first_present(row, ["question", "query"], ""))
-        answer = normalize_answer_value(first_present(row, ["answer", "answers"], ""))
+        answer_value = first_present(row, ["answer", "answers"], "")
+        answers = reference_answers(answer_value)
+        answer = answers[0] if answers else normalize_answer_value(answer_value)
         evidence = first_present(row, ["relevant_passage_ids", "evidence", "passages"], [])
         pairs.append(
             QAPair(
@@ -36,6 +44,8 @@ def load_qa_pairs(limit: int | None = None) -> list[QAPair]:
                 question,
                 answer,
                 _normalize_evidence_ids(evidence),
+                answers,
+                infer_answer_type(answer),
             )
         )
         if limit is not None and len(pairs) >= limit:

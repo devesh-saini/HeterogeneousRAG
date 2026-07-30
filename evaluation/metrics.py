@@ -18,17 +18,80 @@ def exact_match(prediction: str, gold: str) -> float:
 
 
 def token_f1(prediction: str, gold: str) -> float:
+    return token_scores(prediction, gold)["f1"]
+
+
+def token_scores(prediction: str, gold: str) -> dict[str, float]:
     pred_tokens = normalize_text(prediction).split()
     gold_tokens = normalize_text(gold).split()
     if not pred_tokens or not gold_tokens:
-        return float(pred_tokens == gold_tokens)
+        equal = float(pred_tokens == gold_tokens)
+        return {"precision": equal, "recall": equal, "f1": equal}
     overlap = Counter(pred_tokens) & Counter(gold_tokens)
     common = sum(overlap.values())
     if common == 0:
-        return 0.0
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
     precision = common / len(pred_tokens)
     recall = common / len(gold_tokens)
-    return 2 * precision * recall / (precision + recall)
+    return {
+        "precision": precision,
+        "recall": recall,
+        "f1": 2 * precision * recall / (precision + recall),
+    }
+
+
+def score_answer(prediction: str, references: list[str]) -> dict[str, float | int]:
+    """Score against all valid references and expose verbosity separately.
+
+    F1 remains available for comparability, while reference recall and containment
+    reveal answers that contain the expected content but are unnecessarily verbose.
+    """
+    valid_references = [reference for reference in references if normalize_text(reference)]
+    if not valid_references:
+        valid_references = [""]
+
+    candidates: list[dict[str, float | int]] = []
+    normalized_prediction = normalize_text(prediction)
+    prediction_length = len(normalized_prediction.split())
+    for index, reference in enumerate(valid_references):
+        scores = token_scores(prediction, reference)
+        normalized_reference = normalize_text(reference)
+        reference_length = len(normalized_reference.split())
+        candidates.append(
+            {
+                **scores,
+                "reference_index": index,
+                "exact_match": exact_match(prediction, reference),
+                "reference_contained": float(
+                    bool(normalized_reference)
+                    and normalized_reference in normalized_prediction
+                ),
+                "verbosity_ratio": (
+                    prediction_length / reference_length if reference_length else 0.0
+                ),
+            }
+        )
+
+    best = max(
+        candidates,
+        key=lambda item: (
+            float(item["f1"]),
+            float(item["recall"]),
+            float(item["precision"]),
+        ),
+    )
+    return {
+        "exact_match": max(float(item["exact_match"]) for item in candidates),
+        "f1": float(best["f1"]),
+        "answer_precision": float(best["precision"]),
+        "answer_recall": max(float(item["recall"]) for item in candidates),
+        "reference_contained": max(
+            float(item["reference_contained"]) for item in candidates
+        ),
+        "verbosity_ratio": float(best["verbosity_ratio"]),
+        "matched_reference_index": int(best["reference_index"]),
+        "reference_count": len(valid_references),
+    }
 
 
 def token_recall(prediction: str, gold: str) -> float:

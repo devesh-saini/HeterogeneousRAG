@@ -19,7 +19,9 @@ class RAGState(TypedDict, total=False):
     retry_count: int
 
     gold_answer: str
+    gold_answers: list[str]
     gold_evidence: list[str]
+    answer_type: str
 
     metadata: dict[str, Any]
     model_assignment: dict[str, str]

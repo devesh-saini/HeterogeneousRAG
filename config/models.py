@@ -12,16 +12,16 @@ ConfigName = Literal["homogeneous", "heterogeneous"]
 
 
 HOMOGENEOUS_CONFIG: dict[RoleName, str] = {
-    "rewriter": "groq/openai/gpt-oss-20b",
-    "retriever": "groq/openai/gpt-oss-20b",
-    "reranker": "groq/openai/gpt-oss-20b",
-    "synthesizer": "groq/openai/gpt-oss-20b",
-    "verifier": "groq/openai/gpt-oss-20b",
+    "rewriter": "ollama/qwen2.5:latest",
+    "retriever": "ollama/qwen2.5:latest",
+    "reranker": "ollama/qwen2.5:latest",
+    "synthesizer": "ollama/qwen2.5:latest",
+    "verifier": "ollama/qwen2.5:latest",
 }
 
 HETEROGENEOUS_CONFIG: dict[RoleName, str] = {
-    "rewriter": "groq/openai/gpt-oss-20b",
-    "retriever": "groq/openai/gpt-oss-20b",
+    "rewriter": "ollama/qwen2.5:latest",
+    "retriever": "ollama/qwen2.5:latest",
     "reranker": "groq/openai/gpt-oss-20b",
     "synthesizer": "groq/openai/gpt-oss-120b",
     "verifier": "groq/openai/gpt-oss-120b",

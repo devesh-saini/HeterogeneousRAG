@@ -1,4 +1,10 @@
-Check whether the legal answer is fully grounded in the evidence.
+Evaluate the legal answer on three separate dimensions.
+
+Original question:
+{original_query}
+
+Expected answer type:
+{answer_type}
 
 Answer:
 {answer}
@@ -7,6 +13,10 @@ Evidence:
 {evidence}
 
 Return only JSON with this schema:
-{{"verdict": true, "reasoning": "brief explanation"}}
+{{"groundedness_verdict": true, "relevance_verdict": true, "completeness_verdict": true, "unsupported_claims": [], "reasoning": "brief explanation"}}
 
-Use verdict false if any material legal claim is unsupported.
+groundedness_verdict is false if any material legal claim is unsupported by the evidence.
+relevance_verdict is false if the answer does not directly answer the original question.
+completeness_verdict is false if evidence is sufficient but the answer omits a material part requested by the question.
+An answer that says "Insufficient evidence." is grounded only when the supplied evidence is genuinely insufficient.
+Do not compare against a hidden gold answer. Judge only the question, answer, and evidence.
