@@ -17,6 +17,7 @@ SELECT
     COALESCE(evaluation_version, 'legacy') AS evaluation_version,
     COALESCE(scoring_version, 'legacy') AS scoring_version,
     COALESCE(experiment_id, 'untracked') AS experiment_id,
+    COALESCE(rate_limit_profile, 'legacy-unpaced') AS rate_limit_profile,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -53,7 +54,13 @@ SELECT
     SUM(hallucination) AS hallucinations,
     ROUND(AVG(total_cost_usd), 6) AS avg_cost_usd,
     ROUND(SUM(total_cost_usd), 6) AS total_cost_usd,
-    ROUND(AVG(total_latency_ms), 2) AS avg_latency_ms,
+    ROUND(AVG(execution_latency_ms), 2) AS avg_execution_latency_ms,
+    ROUND(AVG(total_latency_ms), 2) AS avg_observed_latency_ms,
+    ROUND(AVG(rate_limit_wait_ms), 2) AS avg_quota_wait_ms,
+    ROUND(AVG(groq_total_tokens), 1) AS avg_groq_tokens,
+    SUM(groq_total_tokens) AS total_groq_tokens,
+    ROUND(AVG(groq_requests), 2) AS avg_groq_requests,
+    SUM(groq_429_retries) AS groq_429_retries,
     MIN(total_latency_ms) AS min_latency_ms,
     MAX(total_latency_ms) AS max_latency_ms,
     ROUND(AVG(COALESCE(json_extract(node_metadata, '$.latest.rewriter.input_tokens'), json_extract(node_metadata, '$.rewriter.input_tokens'))), 1) AS avg_rewriter_in,
@@ -64,7 +71,8 @@ FROM analysis_results
 GROUP BY domain, config_name, model_assignment,
          COALESCE(evaluation_version, 'legacy'),
          COALESCE(scoring_version, 'legacy'),
-         COALESCE(experiment_id, 'untracked')
+         COALESCE(experiment_id, 'untracked'),
+         COALESCE(rate_limit_profile, 'legacy-unpaced')
 ORDER BY domain, config_name, models
 """
 
@@ -75,6 +83,7 @@ SELECT
     COALESCE(evaluation_version, 'legacy') AS evaluation_version,
     COALESCE(scoring_version, 'legacy') AS scoring_version,
     COALESCE(experiment_id, 'untracked') AS experiment_id,
+    COALESCE(rate_limit_profile, 'legacy-unpaced') AS rate_limit_profile,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -99,12 +108,17 @@ SELECT
     ROUND(AVG(completeness_pass), 4) AS completeness_rate,
     ROUND(AVG(verifier_parse_success), 4) AS verifier_parse_rate,
     ROUND(AVG(hallucination), 4) AS unsupported_claim_rate,
-    ROUND(AVG(total_latency_ms), 2) AS avg_latency_ms
+    ROUND(AVG(execution_latency_ms), 2) AS avg_execution_latency_ms,
+    ROUND(AVG(total_latency_ms), 2) AS avg_observed_latency_ms,
+    ROUND(AVG(rate_limit_wait_ms), 2) AS avg_quota_wait_ms,
+    ROUND(AVG(groq_total_tokens), 1) AS avg_groq_tokens,
+    SUM(groq_429_retries) AS groq_429_retries
 FROM analysis_results
 GROUP BY domain, config_name, model_assignment,
          COALESCE(evaluation_version, 'legacy'),
          COALESCE(scoring_version, 'legacy'),
-         COALESCE(experiment_id, 'untracked')
+         COALESCE(experiment_id, 'untracked'),
+         COALESCE(rate_limit_profile, 'legacy-unpaced')
 ORDER BY domain, avg_f1 DESC
 """
 
@@ -115,6 +129,7 @@ SELECT
     COALESCE(evaluation_version, 'legacy') AS evaluation_version,
     COALESCE(scoring_version, 'legacy') AS scoring_version,
     COALESCE(experiment_id, 'untracked') AS experiment_id,
+    COALESCE(rate_limit_profile, 'legacy-unpaced') AS rate_limit_profile,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -135,7 +150,8 @@ FROM analysis_results
 GROUP BY domain, config_name, model_assignment,
          COALESCE(evaluation_version, 'legacy'),
          COALESCE(scoring_version, 'legacy'),
-         COALESCE(experiment_id, 'untracked')
+         COALESCE(experiment_id, 'untracked'),
+         COALESCE(rate_limit_profile, 'legacy-unpaced')
 ORDER BY domain, config_name, models
 """
 
@@ -147,6 +163,7 @@ SELECT
     COALESCE(evaluation_version, 'legacy') AS evaluation_version,
     COALESCE(scoring_version, 'legacy') AS scoring_version,
     COALESCE(experiment_id, 'untracked') AS experiment_id,
+    COALESCE(rate_limit_profile, 'legacy-unpaced') AS rate_limit_profile,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -171,7 +188,12 @@ SELECT
     ROUND(retrieval_recall, 4) AS retrieval_recall,
     retry_count,
     hallucination AS unsupported_claims,
-    total_latency_ms,
+    execution_latency_ms,
+    total_latency_ms AS observed_latency_ms,
+    rate_limit_wait_ms,
+    groq_total_tokens,
+    groq_requests,
+    groq_429_retries,
     created_at
 FROM results
 ORDER BY id DESC
@@ -218,8 +240,16 @@ def _prepare_analysis_view(
     if include_duplicates:
         conn.execute("CREATE TEMP VIEW analysis_results AS SELECT * FROM results")
         return
+    columns = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info(results)").fetchall()
+    }
+    rate_limit_partition = (
+        "COALESCE(rate_limit_profile, 'legacy-unpaced'),"
+        if "rate_limit_profile" in columns
+        else ""
+    )
     conn.execute(
-        """
+        f"""
         CREATE TEMP VIEW analysis_results AS
         SELECT * FROM (
             SELECT results.*,
@@ -228,6 +258,7 @@ def _prepare_analysis_view(
                                     COALESCE(evaluation_version, 'legacy'),
                                     COALESCE(scoring_version, 'legacy'),
                                     COALESCE(experiment_id, 'untracked'),
+                                    {rate_limit_partition}
                                     question_id
                        ORDER BY id DESC
                    ) AS analysis_row_number
@@ -259,7 +290,8 @@ def _print_recommendations(conn: sqlite3.Connection) -> None:
         GROUP BY domain, config_name, model_assignment,
                  COALESCE(evaluation_version, 'legacy'),
                  COALESCE(scoring_version, 'legacy'),
-                 COALESCE(experiment_id, 'untracked')
+                 COALESCE(experiment_id, 'untracked'),
+                 COALESCE(rate_limit_profile, 'legacy-unpaced')
         ORDER BY domain, avg_f1 DESC
         """
     ).fetchall()

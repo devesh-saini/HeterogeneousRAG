@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from config.models import ROLE_MAX_OUTPUT_TOKENS
 from pipeline.nodes.common import add_node_metadata, invoke_llm, load_prompt, render_prompt
 from pipeline.state import RAGState
 
@@ -13,7 +14,11 @@ def synthesizer_node(state: RAGState) -> RAGState:
         answer_type=state.get("answer_type", "unknown"),
         evidence=state.get("reranked_chunks", []),
     )
-    answer, latency_ms = invoke_llm(model_id, prompt)
+    answer, latency_ms, invocation_metadata = invoke_llm(
+        model_id,
+        prompt,
+        max_tokens=ROLE_MAX_OUTPUT_TOKENS["synthesizer"],
+    )
     metadata = add_node_metadata(
         state,
         "synthesizer",
@@ -21,5 +26,6 @@ def synthesizer_node(state: RAGState) -> RAGState:
         input_text=prompt,
         output_text=answer,
         latency_ms=latency_ms,
+        extra=invocation_metadata,
     )
     return {"synthesized_answer": answer, "metadata": metadata}

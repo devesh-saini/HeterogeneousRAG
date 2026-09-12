@@ -32,7 +32,8 @@ METRICS = (
     MetricSpec("relevance_pass", "Relevance rate"),
     MetricSpec("completeness_pass", "Completeness rate"),
     MetricSpec("retry_count", "Retries", False),
-    MetricSpec("total_latency_ms", "Latency (ms)", False),
+    MetricSpec("execution_latency_ms", "Execution latency excl. quota wait (ms)", False),
+    MetricSpec("total_latency_ms", "Observed latency incl. quota wait (ms)", False),
 )
 
 
@@ -109,7 +110,7 @@ def _approximate_pairs_for_power(effect_size: float) -> str:
 def _format(value: float, metric: MetricSpec) -> str:
     if math.isnan(value):
         return "n/a"
-    if metric.column == "total_latency_ms":
+    if metric.column.endswith("latency_ms"):
         return f"{value:.0f}"
     return f"{value:.4f}"
 
@@ -121,14 +122,34 @@ def _load_latest(
     scoring_version: str,
     experiment_id: str | None,
     configs: tuple[str, str],
+    rate_limit_profile: str | None,
 ) -> dict[str, dict[str, sqlite3.Row]]:
+    available_columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(results)").fetchall()
+    }
     where = ["domain = ?", "scoring_version = ?", "config_name IN (?, ?)"]
     params: list[object] = [domain, scoring_version, *configs]
     if experiment_id:
         where.append("experiment_id = ?")
         params.append(experiment_id)
+    if rate_limit_profile:
+        if "rate_limit_profile" in available_columns:
+            where.append("COALESCE(rate_limit_profile, 'legacy-unpaced') = ?")
+            params.append(rate_limit_profile)
+        elif rate_limit_profile != "legacy-unpaced":
+            return {config: {} for config in configs}
+    compatibility_columns = [
+        column
+        for column in ("execution_latency_ms", "rate_limit_profile")
+        if column not in available_columns
+    ]
+    compatibility_select = "".join(
+        f", NULL AS {column}" for column in compatibility_columns
+    )
     rows = connection.execute(
-        f"SELECT * FROM results WHERE {' AND '.join(where)} ORDER BY id",
+        f"SELECT *{compatibility_select} FROM results "
+        f"WHERE {' AND '.join(where)} ORDER BY id",
         params,
     ).fetchall()
     latest: dict[str, dict[str, sqlite3.Row]] = {config: {} for config in configs}
@@ -157,6 +178,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--a", default="homogeneous", help="Baseline configuration.")
     parser.add_argument("--b", default="heterogeneous", help="Comparison configuration.")
     parser.add_argument("--experiment-id")
+    parser.add_argument(
+        "--rate-limit-profile",
+        help="Restrict both configurations to one recorded pacing profile.",
+    )
     parser.add_argument("--scoring-version", default=SCORING_VERSION)
     parser.add_argument("--bootstrap", type=int, default=10_000)
     parser.add_argument("--permutations", type=int, default=20_000)
@@ -174,6 +199,7 @@ def main() -> None:
             scoring_version=args.scoring_version,
             experiment_id=args.experiment_id,
             configs=(args.a, args.b),
+            rate_limit_profile=args.rate_limit_profile,
         )
 
     shared_ids = sorted(set(latest[args.a]).intersection(latest[args.b]))
@@ -188,6 +214,19 @@ def main() -> None:
         print(f"Experiment: {args.experiment_id}")
     else:
         print("Selection: latest row per config/question (duplicates excluded)")
+    profiles = sorted(
+        {
+            str(latest[config][question_id]["rate_limit_profile"] or "legacy-unpaced")
+            for config in (args.a, args.b)
+            for question_id in shared_ids
+        }
+    )
+    print(f"Rate-limit profile(s): {', '.join(profiles)}")
+    if len(profiles) > 1:
+        print(
+            "WARNING: multiple pacing profiles are present. Use a shared experiment ID "
+            "or --rate-limit-profile for a protocol-consistent latency comparison."
+        )
 
     output: list[list[str]] = []
     for metric_index, metric in enumerate(METRICS):

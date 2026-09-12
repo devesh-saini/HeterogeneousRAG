@@ -103,11 +103,19 @@ def main() -> None:
                 f"retrieval_recall={row_dict['retrieval_recall']}",
                 f"retries={row_dict['retry_count']}",
                 f"hallucination={row_dict['hallucination']}",
+                f"execution_latency_ms={row_dict.get('execution_latency_ms')}",
+                f"observed_latency_ms={row_dict.get('total_latency_ms')}",
+                f"quota_wait_ms={row_dict.get('rate_limit_wait_ms')}",
+                f"groq_tokens={row_dict.get('groq_total_tokens')}",
             ]
         )
     )
 
     _section("Models", row_dict.get("model_assignment"))
+    _section(
+        "Groq Rate-Limit Policy",
+        json.dumps(_json_loads(row_dict.get("rate_limit_policy"), {}), indent=2),
+    )
     _section("Question", question)
     _section("Rewritten Query", row_dict.get("rewritten_query"))
     gold_answers = _json_loads(row_dict.get("gold_answers"), [gold_answer])
