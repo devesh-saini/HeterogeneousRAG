@@ -15,6 +15,8 @@ SELECT
     domain,
     config_name,
     COALESCE(evaluation_version, 'legacy') AS evaluation_version,
+    COALESCE(scoring_version, 'legacy') AS scoring_version,
+    COALESCE(experiment_id, 'untracked') AS experiment_id,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -25,6 +27,10 @@ SELECT
     COUNT(*) AS runs,
     ROUND(AVG(em_score), 4) AS avg_em,
     ROUND(AVG(f1_score), 4) AS avg_f1,
+    ROUND(AVG(f2_score), 4) AS avg_f2,
+    ROUND(AVG(rouge_l_f1), 4) AS avg_rouge_l,
+    ROUND(AVG(semantic_similarity), 4) AS avg_semantic,
+    ROUND(AVG(type_accuracy), 4) AS categorical_accuracy,
     ROUND(AVG(answer_precision), 4) AS avg_answer_precision,
     ROUND(AVG(answer_recall), 4) AS avg_answer_recall,
     ROUND(AVG(reference_contained), 4) AS reference_containment_rate,
@@ -54,8 +60,11 @@ SELECT
     ROUND(AVG(COALESCE(json_extract(node_metadata, '$.latest.reranker.input_tokens'), json_extract(node_metadata, '$.reranker.input_tokens'))), 1) AS avg_reranker_in,
     ROUND(AVG(COALESCE(json_extract(node_metadata, '$.latest.synthesizer.input_tokens'), json_extract(node_metadata, '$.synthesizer.input_tokens'))), 1) AS avg_synthesizer_in,
     ROUND(AVG(COALESCE(json_extract(node_metadata, '$.latest.verifier.input_tokens'), json_extract(node_metadata, '$.verifier.input_tokens'))), 1) AS avg_verifier_in
-FROM results
-GROUP BY domain, config_name, model_assignment, COALESCE(evaluation_version, 'legacy')
+FROM analysis_results
+GROUP BY domain, config_name, model_assignment,
+         COALESCE(evaluation_version, 'legacy'),
+         COALESCE(scoring_version, 'legacy'),
+         COALESCE(experiment_id, 'untracked')
 ORDER BY domain, config_name, models
 """
 
@@ -64,6 +73,8 @@ SELECT
     domain,
     config_name,
     COALESCE(evaluation_version, 'legacy') AS evaluation_version,
+    COALESCE(scoring_version, 'legacy') AS scoring_version,
+    COALESCE(experiment_id, 'untracked') AS experiment_id,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -73,6 +84,9 @@ SELECT
     END AS models,
     COUNT(*) AS runs,
     ROUND(AVG(f1_score), 4) AS avg_f1,
+    ROUND(AVG(f2_score), 4) AS avg_f2,
+    ROUND(AVG(rouge_l_f1), 4) AS avg_rouge_l,
+    ROUND(AVG(semantic_similarity), 4) AS avg_semantic,
     ROUND(AVG(answer_precision), 4) AS avg_precision,
     ROUND(AVG(answer_recall), 4) AS avg_recall,
     ROUND(AVG(verbosity_ratio), 2) AS avg_verbosity,
@@ -86,8 +100,11 @@ SELECT
     ROUND(AVG(verifier_parse_success), 4) AS verifier_parse_rate,
     ROUND(AVG(hallucination), 4) AS unsupported_claim_rate,
     ROUND(AVG(total_latency_ms), 2) AS avg_latency_ms
-FROM results
-GROUP BY domain, config_name, model_assignment, COALESCE(evaluation_version, 'legacy')
+FROM analysis_results
+GROUP BY domain, config_name, model_assignment,
+         COALESCE(evaluation_version, 'legacy'),
+         COALESCE(scoring_version, 'legacy'),
+         COALESCE(experiment_id, 'untracked')
 ORDER BY domain, avg_f1 DESC
 """
 
@@ -96,6 +113,8 @@ SELECT
     domain,
     config_name,
     COALESCE(evaluation_version, 'legacy') AS evaluation_version,
+    COALESCE(scoring_version, 'legacy') AS scoring_version,
+    COALESCE(experiment_id, 'untracked') AS experiment_id,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -112,8 +131,11 @@ SELECT
     SUM(CASE WHEN completeness_pass = 0 THEN 1 ELSE 0 END) AS completeness_failures,
     SUM(CASE WHEN verifier_parse_success = 0 THEN 1 ELSE 0 END) AS verifier_parse_failures,
     SUM(CASE WHEN correctness_pass = 0 THEN 1 ELSE 0 END) AS correctness_failures
-FROM results
-GROUP BY domain, config_name, model_assignment, COALESCE(evaluation_version, 'legacy')
+FROM analysis_results
+GROUP BY domain, config_name, model_assignment,
+         COALESCE(evaluation_version, 'legacy'),
+         COALESCE(scoring_version, 'legacy'),
+         COALESCE(experiment_id, 'untracked')
 ORDER BY domain, config_name, models
 """
 
@@ -123,6 +145,8 @@ SELECT
     domain,
     config_name,
     COALESCE(evaluation_version, 'legacy') AS evaluation_version,
+    COALESCE(scoring_version, 'legacy') AS scoring_version,
+    COALESCE(experiment_id, 'untracked') AS experiment_id,
     CASE
         WHEN json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.reranker')
          AND json_extract(model_assignment, '$.rewriter') = json_extract(model_assignment, '$.synthesizer')
@@ -133,6 +157,9 @@ SELECT
     question_id,
     ROUND(em_score, 4) AS em,
     ROUND(f1_score, 4) AS f1,
+    ROUND(f2_score, 4) AS f2,
+    ROUND(rouge_l_f1, 4) AS rouge_l,
+    ROUND(semantic_similarity, 4) AS semantic,
     ROUND(answer_precision, 4) AS precision,
     ROUND(answer_recall, 4) AS answer_recall,
     ROUND(verbosity_ratio, 2) AS verbosity,
@@ -184,6 +211,33 @@ def _ensure_analysis_columns(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _prepare_analysis_view(
+    conn: sqlite3.Connection, *, include_duplicates: bool
+) -> None:
+    conn.execute("DROP VIEW IF EXISTS analysis_results")
+    if include_duplicates:
+        conn.execute("CREATE TEMP VIEW analysis_results AS SELECT * FROM results")
+        return
+    conn.execute(
+        """
+        CREATE TEMP VIEW analysis_results AS
+        SELECT * FROM (
+            SELECT results.*,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY domain, config_name, model_assignment,
+                                    COALESCE(evaluation_version, 'legacy'),
+                                    COALESCE(scoring_version, 'legacy'),
+                                    COALESCE(experiment_id, 'untracked'),
+                                    question_id
+                       ORDER BY id DESC
+                   ) AS analysis_row_number
+            FROM results
+        )
+        WHERE analysis_row_number = 1
+        """
+    )
+
+
 def _json_loads(value: object, default: Any) -> Any:
     if not value:
         return default
@@ -201,8 +255,11 @@ def _print_recommendations(conn: sqlite3.Connection) -> None:
                AVG(retrieval_recall) AS avg_retrieval,
                AVG(hallucination) AS hallucination_rate,
                AVG(total_latency_ms) AS avg_latency
-        FROM results
-        GROUP BY domain, config_name, model_assignment
+        FROM analysis_results
+        GROUP BY domain, config_name, model_assignment,
+                 COALESCE(evaluation_version, 'legacy'),
+                 COALESCE(scoring_version, 'legacy'),
+                 COALESCE(experiment_id, 'untracked')
         ORDER BY domain, avg_f1 DESC
         """
     ).fetchall()
@@ -255,6 +312,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Also print a short best-F1 interpretation per domain.",
     )
+    parser.add_argument(
+        "--include-duplicates",
+        action="store_true",
+        help="Include repeated question rows in aggregates (default: latest only).",
+    )
     return parser.parse_args()
 
 
@@ -265,6 +327,9 @@ def main() -> None:
 
     with sqlite3.connect(args.db) as conn:
         _ensure_analysis_columns(conn)
+        _prepare_analysis_view(conn, include_duplicates=args.include_duplicates)
+        if not args.include_duplicates:
+            print("Aggregates use the latest row per unique question; duplicates are excluded.\n")
         headers, rows = _fetch(conn, SUMMARY_QUERY if args.full else COMPACT_QUERY)
         _print_table(headers, rows)
 

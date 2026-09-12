@@ -11,6 +11,7 @@ class QAPair:
     evidence: list[str]
     reference_answers: tuple[str, ...] = ()
     answer_type: str = "unknown"
+    reference_answer_types: tuple[str, ...] = ()
 
     @property
     def answers(self) -> list[str]:
@@ -19,6 +20,12 @@ class QAPair:
         if self.answer.strip() and self.answer.strip() not in references:
             references.insert(0, self.answer.strip())
         return references or [self.answer]
+
+    @property
+    def answer_types(self) -> list[str]:
+        if len(self.reference_answer_types) == len(self.answers):
+            return list(self.reference_answer_types)
+        return [self.answer_type] * len(self.answers)
 
 
 def first_present(row: dict, names: list[str], default: object = "") -> object:

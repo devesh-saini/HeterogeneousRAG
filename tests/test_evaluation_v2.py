@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from data.evaluation.common import QAPair
-from evaluation.metrics import score_answer
+from evaluation.metrics import rouge_l_scores, score_answer
+from evaluation.summarize_results import _prepare_analysis_view
 from pipeline.nodes.common import add_node_metadata
 from pipeline.nodes.verifier import _parse_verification
 
@@ -36,6 +38,27 @@ class AnswerScoringTests(unittest.TestCase):
         self.assertEqual(scores["reference_contained"], 1.0)
         self.assertGreater(scores["verbosity_ratio"], 2.0)
         self.assertLess(scores["answer_precision"], scores["answer_recall"])
+        self.assertGreater(scores["f2"], scores["f1"])
+
+    def test_rouge_l_rewards_ordered_overlap(self) -> None:
+        ordered = rouge_l_scores("alpha beta gamma", "alpha beta gamma")
+        reordered = rouge_l_scores("gamma beta alpha", "alpha beta gamma")
+        self.assertEqual(ordered["f1"], 1.0)
+        self.assertLess(reordered["f1"], ordered["f1"])
+
+    def test_boolean_type_accuracy_accepts_yes_true_equivalence(self) -> None:
+        scores = score_answer("Yes, it does.", ["True"], answer_type="yes_no")
+        self.assertEqual(scores["type_accuracy"], 1.0)
+
+    def test_official_f1_scores_empty_prediction_zero(self) -> None:
+        scores = score_answer("", [""])
+        self.assertEqual(scores["f1"], 0.0)
+
+    def test_unanswerable_type_accuracy_accepts_standard_abstention(self) -> None:
+        scores = score_answer(
+            "Insufficient evidence.", ["unanswerable"], answer_type="unanswerable"
+        )
+        self.assertEqual(scores["type_accuracy"], 1.0)
 
     def test_qapair_answers_preserves_legacy_primary_answer(self) -> None:
         pair = QAPair("1", "q", "first", [], ("second", "first"), "free_form")
@@ -157,20 +180,74 @@ class RunnerPersistenceTests(unittest.TestCase):
                         "verifier": "test/model",
                     },
                     n_questions=1,
+                    experiment_id="test-experiment",
+                    semantic_scoring=False,
+                )
+                runner.run_evaluation(
+                    domain="cs",
+                    config_name="homogeneous",
+                    model_assignment={
+                        "rewriter": "test/model",
+                        "retriever": "test/model",
+                        "reranker": "test/model",
+                        "synthesizer": "test/model",
+                        "verifier": "test/model",
+                    },
+                    n_questions=1,
+                    experiment_id="test-experiment",
+                    resume=True,
+                    semantic_scoring=False,
                 )
 
             import sqlite3
 
-            with sqlite3.connect(database_path) as connection:
+            with closing(sqlite3.connect(database_path)) as connection:
                 row = connection.execute(
                     """
-                    SELECT reference_count, answer_recall, correctness_pass,
+                    SELECT reference_count, answer_recall, f2_score, rouge_l_f1,
+                           correctness_pass,
                            groundedness_pass, hallucination, verifier_parse_success,
-                           evaluation_version
+                           evaluation_version, scoring_version, experiment_id
                     FROM results
                     """
                 ).fetchone()
-            self.assertEqual(row, (2, 1.0, 1, 1, 0, 1, "2.0-reference-aware"))
+            self.assertEqual(
+                row,
+                (
+                    2,
+                    1.0,
+                    1.0,
+                    1.0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    "2.0-reference-aware",
+                    "3.0-official-plus",
+                    "test-experiment",
+                ),
+            )
+
+    def test_summary_view_deduplicates_latest_question(self) -> None:
+        import sqlite3
+
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.execute(
+                """
+                CREATE TABLE results (
+                    id INTEGER, domain TEXT, config_name TEXT,
+                    model_assignment TEXT, evaluation_version TEXT,
+                    scoring_version TEXT, experiment_id TEXT, question_id TEXT
+                )
+                """
+            )
+            connection.executemany(
+                "INSERT INTO results VALUES (?, 'cs', 'homogeneous', '{}', 'v', 's', NULL, 'q1')",
+                [(1,), (2,)],
+            )
+            _prepare_analysis_view(connection, include_duplicates=False)
+            ids = [row[0] for row in connection.execute("SELECT id FROM analysis_results")]
+        self.assertEqual(ids, [2])
 
 
 if __name__ == "__main__":

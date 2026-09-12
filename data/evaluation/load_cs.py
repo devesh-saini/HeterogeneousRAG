@@ -25,22 +25,22 @@ def _answer_text(answer: dict) -> str:
         return free_form
     extractive_spans = answer.get("extractive_spans")
     if isinstance(extractive_spans, list) and extractive_spans:
-        return normalize_answer_value(extractive_spans)
+        return ", ".join(str(span) for span in extractive_spans)
     yes_no = answer.get("yes_no")
     if yes_no is not None:
-        return str(yes_no)
+        return "Yes" if yes_no else "No"
     return normalize_answer_value(answer)
 
 
 def _answer_type(answer: dict) -> str:
     if answer.get("unanswerable"):
-        return "unanswerable"
+        return "none"
     if str(answer.get("free_form_answer") or "").strip():
-        return "free_form"
+        return "abstractive"
     if answer.get("extractive_spans"):
         return "extractive"
     if answer.get("yes_no") is not None:
-        return "yes_no"
+        return "boolean"
     return "unknown"
 
 
@@ -53,11 +53,13 @@ def load_qa_pairs(limit: int | None = None) -> list[QAPair]:
             annotations = _answers(qa.get("answers"))
             if not annotations:
                 continue
-            reference_answers = tuple(
-                dict.fromkeys(
-                    text for text in (_answer_text(answer) for answer in annotations) if text.strip()
-                )
-            )
+            reference_map: dict[str, str] = {}
+            for annotation in annotations:
+                text = _answer_text(annotation)
+                if text.strip() and text not in reference_map:
+                    reference_map[text] = _answer_type(annotation)
+            reference_answers = tuple(reference_map)
+            reference_answer_types = tuple(reference_map.values())
             evidence = list(
                 dict.fromkeys(
                     str(item)
@@ -77,7 +79,8 @@ def load_qa_pairs(limit: int | None = None) -> list[QAPair]:
                 reference_answers[0] if reference_answers else "",
                 evidence,
                 reference_answers,
-                _answer_type(annotations[0]),
+                reference_answer_types[0] if reference_answer_types else "unknown",
+                reference_answer_types,
             )
             if pair.question and pair.answer:
                 pairs.append(pair)

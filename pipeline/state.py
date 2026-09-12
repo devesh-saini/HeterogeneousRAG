@@ -20,6 +20,7 @@ class RAGState(TypedDict, total=False):
 
     gold_answer: str
     gold_answers: list[str]
+    gold_answer_types: list[str]
     gold_evidence: list[str]
     answer_type: str
 

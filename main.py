@@ -11,6 +11,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--domain", required=True, choices=sorted(DOMAINS))
     parser.add_argument("--config", "--connfig", required=True, choices=sorted(MODEL_CONFIGS))
     parser.add_argument("--n_questions", type=int, default=None)
+    parser.add_argument(
+        "--experiment_id",
+        default=None,
+        help="Shared id for matched homogeneous/heterogeneous runs.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip questions already stored for this experiment/config (or latest untracked run).",
+    )
+    parser.add_argument(
+        "--no_semantic_scoring",
+        action="store_true",
+        help="Disable the lightweight embedding-similarity diagnostic.",
+    )
     return parser.parse_args()
 
 
@@ -30,6 +45,9 @@ def main() -> None:
         config_name=args.config,
         model_assignment=model_assignment,
         n_questions=args.n_questions,
+        experiment_id=args.experiment_id,
+        resume=args.resume,
+        semantic_scoring=not args.no_semantic_scoring,
     )
 
 

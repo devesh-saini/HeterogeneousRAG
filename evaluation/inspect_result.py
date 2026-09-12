@@ -94,6 +94,9 @@ def main() -> None:
                 f"question_id={row_dict['question_id']}",
                 f"evaluation={row_dict.get('evaluation_version') or 'legacy'}",
                 f"f1={row_dict['f1_score']}",
+                f"f2={row_dict.get('f2_score')}",
+                f"rouge_l={row_dict.get('rouge_l_f1')}",
+                f"semantic={row_dict.get('semantic_similarity')}",
                 f"precision={row_dict.get('answer_precision')}",
                 f"recall={row_dict.get('answer_recall')}",
                 f"verbosity={row_dict.get('verbosity_ratio')}",
@@ -109,6 +112,10 @@ def main() -> None:
     _section("Rewritten Query", row_dict.get("rewritten_query"))
     gold_answers = _json_loads(row_dict.get("gold_answers"), [gold_answer])
     _section("Reference Answers", json.dumps(gold_answers, indent=2))
+    _section(
+        "Reference Answer Types",
+        json.dumps(_json_loads(row_dict.get("gold_answer_types"), []), indent=2),
+    )
     _section("Answer Type", row_dict.get("answer_type") or "unknown")
     _section("Generated Answer", row_dict.get("synthesized_answer"))
     _section("Gold Evidence", json.dumps(gold_evidence, indent=2))
@@ -119,11 +126,17 @@ def main() -> None:
             {
                 "exact_match": row_dict.get("em_score"),
                 "max_reference_f1": row_dict.get("f1_score"),
+                "max_reference_f2": row_dict.get("f2_score"),
+                "max_reference_rouge_l_f1": row_dict.get("rouge_l_f1"),
+                "semantic_similarity": row_dict.get("semantic_similarity"),
+                "semantic_model": row_dict.get("semantic_model"),
+                "categorical_reference_accuracy": row_dict.get("type_accuracy"),
                 "answer_precision": row_dict.get("answer_precision"),
                 "answer_recall": row_dict.get("answer_recall"),
                 "reference_contained": row_dict.get("reference_contained"),
                 "verbosity_ratio": row_dict.get("verbosity_ratio"),
                 "correctness_pass": row_dict.get("correctness_pass"),
+                "scoring_version": row_dict.get("scoring_version"),
                 "verifier_parse_success": row_dict.get("verifier_parse_success"),
                 "failure_category": row_dict.get("failure_category"),
             },

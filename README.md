@@ -116,14 +116,24 @@ Re-run ingestion after changes to corpus metadata or train/test split coverage. 
 Run a homogeneous baseline:
 
 ```bash
-python main.py --domain computerScience --config homogeneous --n_questions 200
+python main.py --domain computerScience --config homogeneous --n_questions 100 \
+  --experiment_id cs-100-v1 --resume
 ```
 
 Run a heterogeneous experiment:
 
 ```bash
-python main.py --domain computerScience --config heterogeneous --n_questions 200
+python main.py --domain computerScience --config heterogeneous --n_questions 100 \
+  --experiment_id cs-100-v1 --resume
 ```
+
+Use the same experiment ID and question count for both configurations. `--resume`
+skips completed question/config pairs, which makes long experiments safe to stop
+and continue on a small machine. The database prevents duplicate rows within a
+named experiment.
+
+For older untracked rows, `--resume` without an experiment ID skips already stored
+questions for the same configuration and evaluation version.
 
 Valid domains:
 
@@ -163,6 +173,10 @@ The runner logs:
 - `model_assignment`
 - `em_score`
 - `f1_score`
+- `f2_score`
+- `rouge_l_f1`
+- `semantic_similarity`
+- `type_accuracy`
 - `retrieval_recall`
 - `retry_count`
 - `hallucination`
@@ -179,8 +193,16 @@ The runner logs:
 New runs use evaluation version `2.0-reference-aware`. Legacy rows remain in the
 database and are reported separately.
 
-- EM and token F1 are computed against every valid reference answer and use the
-  best matching reference.
+- `f1_score` follows the official QASPER convention: SQuAD-normalized token F1
+  against every human reference, retaining the maximum. Keep it as the primary
+  paper metric.
+- `f2_score` weights answer coverage more strongly, so it exposes correct but
+  verbose answers without hiding the precision penalty.
+- `rouge_l_f1` measures ordered phrase overlap. `semantic_similarity` uses the
+  same small MiniLM encoder already used for retrieval and is diagnostic, not a
+  replacement for official F1.
+- Boolean and unanswerable references use QASPER's official Yes/No/Unanswerable
+  representation; `type_accuracy` also accepts standard equivalent forms.
 - `answer_precision` measures concision; `answer_recall` measures how much of the
   reference answer was covered.
 - `reference_contained` identifies answers that contain a complete reference but
@@ -197,6 +219,22 @@ Summaries keep legacy and reference-aware runs separate:
 
 ```bash
 python -m evaluation.summarize_results --full --failures
+```
+
+Aggregates automatically use only the latest row for each unique question. To
+compare configurations on exactly the same questions with confidence intervals,
+effect sizes, win/tie/loss counts, and paired randomization tests:
+
+```bash
+python -m evaluation.compare_configs --domain computerScience
+```
+
+Existing stored answers can be upgraded to the current scorecard without any LLM
+calls:
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+  python -m evaluation.rescore_results
 ```
 
 Inspect all reference answers, verifier dimensions, and post-run scores for one
