@@ -7,6 +7,7 @@ SEMANTIC_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 
 # Additive only: historical result rows remain untouched and are labelled legacy.
 RESULT_COLUMN_MIGRATIONS: dict[str, str] = {
+    "source_id": "TEXT",
     "original_query": "TEXT",
     "rewritten_query": "TEXT",
     "gold_evidence": "TEXT",

@@ -8,16 +8,25 @@ if __package__ in {None, ""}:
 
 from config.domains import get_domain
 from data.ingestion.common import IngestDocument, embed_corpus
-from data.ingestion.sources import load_cuad_contexts
+from data.ingestion.sources import load_cuad_documents
 
 
 def ingest() -> int:
     return embed_corpus(
         get_domain("law"),
         (
-            IngestDocument(context, {"source_split": split})
+            IngestDocument(
+                str(paragraph.get("context", "")),
+                {
+                    "source_split": split,
+                    "source_id": str(document.get("title", "")),
+                },
+            )
             for split in ("train", "test")
-            for context in load_cuad_contexts(split)
+            for document in load_cuad_documents(split).get("data", [])
+            if isinstance(document, dict)
+            for paragraph in document.get("paragraphs", [])
+            if isinstance(paragraph, dict)
         ),
     )
 

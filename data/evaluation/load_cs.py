@@ -81,6 +81,7 @@ def load_qa_pairs(limit: int | None = None) -> list[QAPair]:
                 reference_answers,
                 reference_answer_types[0] if reference_answer_types else "unknown",
                 reference_answer_types,
+                str(paper.get("id", "")) or None,
             )
             if pair.question and pair.answer:
                 pairs.append(pair)

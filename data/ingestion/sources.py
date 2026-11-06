@@ -79,7 +79,7 @@ def _read_cuad_json(split: str = "train") -> dict[str, Any]:
 
 
 def load_cuad_contexts(split: str = "train") -> list[str]:
-    data = _read_cuad_json(split)
+    data = load_cuad_documents(split)
     contexts: list[str] = []
     for example in data.get("data", []):
         if not isinstance(example, dict):
@@ -88,3 +88,8 @@ def load_cuad_contexts(split: str = "train") -> list[str]:
             if isinstance(paragraph, dict):
                 contexts.append(str(paragraph.get("context", "")))
     return contexts
+
+
+def load_cuad_documents(split: str = "train") -> dict[str, Any]:
+    """Return the pinned raw CUAD split used by both ingestion and evaluation."""
+    return _read_cuad_json(split)
