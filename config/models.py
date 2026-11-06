@@ -32,6 +32,19 @@ MODEL_CONFIGS: dict[ConfigName, dict[RoleName, str]] = {
     "heterogeneous": HETEROGENEOUS_CONFIG,
 }
 
+# Output caps bound the completion side of free-tier Groq usage and make the
+# generation budget identical for a role across configurations.
+ROLE_MAX_OUTPUT_TOKENS: dict[RoleName, int] = {
+    "rewriter": 256,
+    "retriever": 1,
+    "reranker": 512,
+    "synthesizer": 768,
+    "verifier": 768,
+}
+
+GROQ_GPT_OSS_REASONING_EFFORT = "low"
+RERANKER_PROMPT_CHARACTER_BUDGET = 18_000
+
 # Fill these with your actual Groq pricing if you want dollar-accurate accounting.
 # Values are USD per 1M tokens.
 MODEL_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
@@ -62,16 +75,35 @@ def get_model_config(config_name: str) -> dict[RoleName, str]:
         raise ValueError(f"Unknown config '{config_name}'. Expected one of: {valid}") from exc
 
 
-def build_chat_model(model_id: str, temperature: float = 0.0) -> "BaseChatModel":
+def build_chat_model(
+    model_id: str, temperature: float = 0.0, max_tokens: int | None = None
+) -> "BaseChatModel":
     spec = parse_model_spec(model_id)
     if spec.provider == "ollama":
         from langchain_ollama import ChatOllama
 
-        return ChatOllama(model=spec.model, temperature=temperature)
+        return ChatOllama(
+            model=spec.model,
+            temperature=temperature,
+            num_predict=max_tokens,
+        )
     if spec.provider == "groq":
         from langchain_groq import ChatGroq
 
-        return ChatGroq(model=spec.model, temperature=temperature)
+        # Retries are handled in the shared invocation layer so their waiting
+        # time and count are visible in experiment metadata.
+        groq_options: dict[str, object] = {}
+        if spec.model.startswith("openai/gpt-oss-"):
+            # GPT-OSS defaults to medium reasoning. Low effort preserves a
+            # reasoning stage while keeping free-tier completion usage bounded.
+            groq_options["reasoning_effort"] = GROQ_GPT_OSS_REASONING_EFFORT
+        return ChatGroq(
+            model=spec.model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            max_retries=0,
+            **groq_options,
+        )
     raise ValueError(f"Unsupported model provider '{spec.provider}' in '{model_id}'")
 
 

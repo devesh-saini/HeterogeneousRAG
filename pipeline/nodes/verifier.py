@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 
+from config.models import ROLE_MAX_OUTPUT_TOKENS
 from pipeline.nodes.common import add_node_metadata, invoke_llm, load_prompt, render_prompt
 from pipeline.state import RAGState
 
@@ -74,7 +75,11 @@ def verifier_node(state: RAGState) -> RAGState:
         answer=state.get("synthesized_answer", ""),
         evidence=state.get("reranked_chunks", []),
     )
-    output, latency_ms = invoke_llm(model_id, prompt)
+    output, latency_ms, invocation_metadata = invoke_llm(
+        model_id,
+        prompt,
+        max_tokens=ROLE_MAX_OUTPUT_TOKENS["verifier"],
+    )
     verification_result = _parse_verification(output)
     metadata = add_node_metadata(
         state,
@@ -83,5 +88,6 @@ def verifier_node(state: RAGState) -> RAGState:
         input_text=prompt,
         output_text=output,
         latency_ms=latency_ms,
+        extra=invocation_metadata,
     )
     return {"verification_result": verification_result, "metadata": metadata}

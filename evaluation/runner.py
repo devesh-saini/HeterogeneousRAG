@@ -5,6 +5,11 @@ import time
 from typing import Callable
 
 from config.domains import RESULTS_DB_PATH
+from config.models import (
+    GROQ_GPT_OSS_REASONING_EFFORT,
+    RERANKER_PROMPT_CHARACTER_BUDGET,
+    ROLE_MAX_OUTPUT_TOKENS,
+)
 from data.evaluation.common import QAPair
 from evaluation.metrics import retrieval_recall, score_answer
 from evaluation.schema import (
@@ -14,6 +19,7 @@ from evaluation.schema import (
     RESULT_COLUMN_MIGRATIONS,
 )
 from pipeline.graph import build_rag_graph
+from pipeline.rate_limit import get_groq_rate_limit_settings
 from pipeline.state import RAGState
 
 
@@ -49,6 +55,15 @@ CREATE TABLE IF NOT EXISTS results (
     failure_category TEXT,
     total_cost_usd REAL,
     total_latency_ms INTEGER,
+    execution_latency_ms INTEGER,
+    rate_limit_wait_ms INTEGER,
+    groq_input_tokens INTEGER,
+    groq_output_tokens INTEGER,
+    groq_total_tokens INTEGER,
+    groq_requests INTEGER,
+    groq_429_retries INTEGER,
+    rate_limit_profile TEXT,
+    rate_limit_policy TEXT,
     node_metadata TEXT,
     original_query TEXT,
     rewritten_query TEXT,
@@ -117,11 +132,37 @@ def _ensure_db():
     return engine
 
 
-def _metadata_totals(metadata: dict) -> tuple[float, int]:
-    values = metadata.get("events", metadata.values())
-    total_cost = sum(float(node.get("cost_usd", 0.0)) for node in values)
-    total_latency = sum(int(node.get("latency_ms", 0)) for node in values)
-    return total_cost, total_latency
+def _metadata_totals(metadata: dict) -> dict[str, float | int]:
+    values = list(metadata.get("events", metadata.values()))
+    groq_events = [
+        node for node in values if str(node.get("model", "")).startswith("groq/")
+    ]
+    return {
+        "total_cost_usd": sum(float(node.get("cost_usd", 0.0)) for node in values),
+        "node_latency_ms": sum(int(node.get("latency_ms", 0)) for node in values),
+        "rate_limit_wait_ms": sum(
+            int(node.get("rate_limit_wait_ms", 0)) for node in groq_events
+        ),
+        "groq_input_tokens": sum(
+            int(node.get("input_tokens", 0)) for node in groq_events
+        ),
+        "groq_output_tokens": sum(
+            int(node.get("output_tokens", 0)) for node in groq_events
+        ),
+        "groq_total_tokens": sum(
+            int(
+                node.get(
+                    "total_tokens",
+                    int(node.get("input_tokens", 0)) + int(node.get("output_tokens", 0)),
+                )
+            )
+            for node in groq_events
+        ),
+        "groq_requests": len(groq_events),
+        "groq_429_retries": sum(
+            int(node.get("rate_limit_retries", 0)) for node in groq_events
+        ),
+    }
 
 
 def _failure_category(
@@ -158,20 +199,46 @@ def run_evaluation(
     graph = build_rag_graph()
     qa_pairs = _load_pairs(domain, n_questions)
     engine = _ensure_db()
+    rate_limit_settings = get_groq_rate_limit_settings()
 
     if experiment_id or resume:
         from sqlalchemy import text
+
+        if experiment_id:
+            with engine.begin() as conn:
+                existing_profiles = {
+                    str(row[0] or "legacy-unpaced")
+                    for row in conn.execute(
+                        text(
+                            """
+                            SELECT DISTINCT rate_limit_profile FROM results
+                            WHERE experiment_id = :experiment_id
+                            """
+                        ),
+                        {"experiment_id": experiment_id},
+                    )
+                }
+            incompatible_profiles = existing_profiles - {rate_limit_settings.profile}
+            if incompatible_profiles:
+                profiles = ", ".join(sorted(incompatible_profiles))
+                raise ValueError(
+                    f"Experiment '{experiment_id}' already uses rate-limit profile(s): "
+                    f"{profiles}. Choose a new experiment id for "
+                    f"'{rate_limit_settings.profile}'."
+                )
 
         query = """
             SELECT question_id FROM results
             WHERE domain = :domain
               AND config_name = :config_name
               AND evaluation_version = :evaluation_version
+              AND COALESCE(rate_limit_profile, 'legacy-unpaced') = :rate_limit_profile
         """
         query_params = {
             "domain": domain,
             "config_name": config_name,
             "evaluation_version": EVALUATION_VERSION,
+            "rate_limit_profile": rate_limit_settings.profile,
         }
         if experiment_id:
             query += " AND experiment_id = :experiment_id"
@@ -237,8 +304,15 @@ def run_evaluation(
         retrieved_metadata = result.get("retrieved_metadata", [])
         recall = retrieval_recall(retrieved_chunks, pair.evidence, retrieved_metadata)
         metadata = result.get("metadata", {})
-        total_cost, node_latency_ms = _metadata_totals(metadata)
-        total_latency_ms = max(wall_latency_ms, node_latency_ms)
+        metadata_totals = _metadata_totals(metadata)
+        rate_limit_wait_ms = int(metadata_totals["rate_limit_wait_ms"])
+        node_latency_ms = int(metadata_totals["node_latency_ms"])
+        total_latency_ms = max(wall_latency_ms, node_latency_ms + rate_limit_wait_ms)
+        execution_latency_ms = max(
+            0,
+            wall_latency_ms - rate_limit_wait_ms,
+            node_latency_ms,
+        )
         verification = result.get("verification_result", {})
         grounded = bool(verification.get("groundedness_verdict", False))
         relevant = bool(verification.get("relevance_verdict", False))
@@ -277,7 +351,10 @@ def run_evaluation(
                         retrieval_recall, retry_count, hallucination,
                         groundedness_pass, relevance_pass, completeness_pass,
                         verifier_parse_success, correctness_pass, failure_category,
-                        total_cost_usd, total_latency_ms, node_metadata,
+                        total_cost_usd, total_latency_ms, execution_latency_ms,
+                        rate_limit_wait_ms, groq_input_tokens, groq_output_tokens,
+                        groq_total_tokens, groq_requests, groq_429_retries,
+                        rate_limit_profile, rate_limit_policy, node_metadata,
                         original_query, rewritten_query, gold_evidence,
                         retrieved_chunks, retrieved_metadata, verification_result,
                         synthesized_answer, gold_answer, gold_answers,
@@ -294,7 +371,10 @@ def run_evaluation(
                         :retrieval_recall, :retry_count, :hallucination,
                         :groundedness_pass, :relevance_pass, :completeness_pass,
                         :verifier_parse_success, :correctness_pass, :failure_category,
-                        :total_cost_usd, :total_latency_ms, :node_metadata,
+                        :total_cost_usd, :total_latency_ms, :execution_latency_ms,
+                        :rate_limit_wait_ms, :groq_input_tokens, :groq_output_tokens,
+                        :groq_total_tokens, :groq_requests, :groq_429_retries,
+                        :rate_limit_profile, :rate_limit_policy, :node_metadata,
                         :original_query, :rewritten_query, :gold_evidence,
                         :retrieved_chunks, :retrieved_metadata, :verification_result,
                         :synthesized_answer, :gold_answer, :gold_answers,
@@ -333,8 +413,26 @@ def run_evaluation(
                     "verifier_parse_success": int(verifier_parse_success),
                     "correctness_pass": int(correctness_pass),
                     "failure_category": failure_category,
-                    "total_cost_usd": total_cost,
+                    "total_cost_usd": metadata_totals["total_cost_usd"],
                     "total_latency_ms": total_latency_ms,
+                    "execution_latency_ms": execution_latency_ms,
+                    "rate_limit_wait_ms": rate_limit_wait_ms,
+                    "groq_input_tokens": metadata_totals["groq_input_tokens"],
+                    "groq_output_tokens": metadata_totals["groq_output_tokens"],
+                    "groq_total_tokens": metadata_totals["groq_total_tokens"],
+                    "groq_requests": metadata_totals["groq_requests"],
+                    "groq_429_retries": metadata_totals["groq_429_retries"],
+                    "rate_limit_profile": rate_limit_settings.profile,
+                    "rate_limit_policy": json.dumps(
+                        {
+                            **rate_limit_settings.as_metadata(),
+                            "role_max_output_tokens": ROLE_MAX_OUTPUT_TOKENS,
+                            "gpt_oss_reasoning_effort": GROQ_GPT_OSS_REASONING_EFFORT,
+                            "reranker_prompt_character_budget": (
+                                RERANKER_PROMPT_CHARACTER_BUDGET
+                            ),
+                        }
+                    ),
                     "node_metadata": json.dumps(metadata),
                     "original_query": pair.question,
                     "rewritten_query": result.get("rewritten_query", ""),

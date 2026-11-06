@@ -26,11 +26,11 @@ Homogeneous baseline:
 
 ```python
 HOMOGENEOUS_CONFIG = {
-    "rewriter": "ollama/qwen2.5:7b",
-    "retriever": "ollama/qwen2.5:7b",
-    "reranker": "ollama/qwen2.5:7b",
-    "synthesizer": "ollama/qwen2.5:7b",
-    "verifier": "ollama/qwen2.5:7b",
+    "rewriter": "ollama/qwen2.5:latest",
+    "retriever": "ollama/qwen2.5:latest",
+    "reranker": "ollama/qwen2.5:latest",
+    "synthesizer": "ollama/qwen2.5:latest",
+    "verifier": "ollama/qwen2.5:latest",
 }
 ```
 
@@ -38,11 +38,11 @@ Heterogeneous config:
 
 ```python
 HETEROGENEOUS_CONFIG = {
-    "rewriter": "ollama/qwen2.5:7b",
-    "retriever": "ollama/qwen2.5:7b",
-    "reranker": "ollama/qwen2.5:7b",
-    "synthesizer": "groq/llama-3.1-70b-versatile",
-    "verifier": "groq/llama-3.1-70b-versatile",
+    "rewriter": "ollama/qwen2.5:latest",
+    "retriever": "ollama/qwen2.5:latest",
+    "reranker": "groq/openai/gpt-oss-20b",
+    "synthesizer": "groq/openai/gpt-oss-120b",
+    "verifier": "groq/openai/gpt-oss-120b",
 }
 ```
 
@@ -117,23 +117,70 @@ Run a homogeneous baseline:
 
 ```bash
 python main.py --domain computerScience --config homogeneous --n_questions 100 \
-  --experiment_id cs-100-v1 --resume
+  --experiment_id cs-100-groq-free-v1 --resume
 ```
 
 Run a heterogeneous experiment:
 
 ```bash
 python main.py --domain computerScience --config heterogeneous --n_questions 100 \
-  --experiment_id cs-100-v1 --resume
+  --experiment_id cs-100-groq-free-v1 --resume
 ```
+
+### Groq free-tier pacing
+
+Remote requests are protected by a process-wide rolling token limiter. The
+default profile uses Groq's 8,000 TPM free-tier ceiling with a 90% working budget
+(7,200 estimated tokens in any rolling 60-second window). The limiter reserves a
+conservative token estimate before each Groq call, replaces it with exact usage
+reported by Groq afterward, and honors `retry-after` when HTTP 429 is returned.
+Reranker, synthesizer, and verifier calls share this budget, including calls made
+during graph retries. GPT-OSS calls use `reasoning_effort="low"`; role-specific
+completion caps are 512 tokens for reranking and 768 tokens each for synthesis
+and verification. These settings prevent hidden reasoning output from consuming
+an unbounded portion of the free-tier quota. The reranker sees an 18,000-character
+budgeted view of the five candidate chunks (the beginning and end are retained
+when truncation is necessary); synthesis still receives the selected chunks in
+full.
+
+The defaults can be stated explicitly for a reproducible run:
+
+```bash
+python main.py --domain computerScience --config heterogeneous --n_questions 100 \
+  --experiment_id cs-100-groq-free-v1 --resume \
+  --groq_tpm_limit 8000 --groq_rate_limit_utilization 0.90 \
+  --groq_max_429_retries 4
+```
+
+This is adaptive pacing, so it waits only when the next estimated request would
+exceed the rolling budget. A fixed two-minute delay is unnecessary. Set the TPM
+limit to `0` only when client-side pacing is intentionally disabled. TPM pacing
+does not bypass Groq's daily token/request limits; use `--resume` on another day
+if the daily allowance is exhausted.
+
+The limiter coordinates calls within one Python process. Do not run multiple
+heterogeneous benchmark processes against the same Groq organization at once.
+
+Suggested methods wording:
+
+> Experiments were executed in a resource-constrained local environment. Remote
+> inference used the Groq free service tier, so Groq requests were serialized by
+> a client-side rolling-window limiter configured for an 8,000-token-per-minute
+> ceiling and a 90% working budget. Quota-induced waiting time was logged
+> separately from pipeline execution latency, and runs were resumable. GPT-OSS
+> inference used low reasoning effort and fixed role-specific completion limits;
+> reranking used a bounded view of candidate passages while selected passages
+> were supplied to answer synthesis without this truncation.
 
 Use the same experiment ID and question count for both configurations. `--resume`
 skips completed question/config pairs, which makes long experiments safe to stop
 and continue on a small machine. The database prevents duplicate rows within a
-named experiment.
+named experiment. Use a new experiment ID for this rate-limited protocol; the
+runner rejects resuming a named experiment under a different pacing profile.
 
-For older untracked rows, `--resume` without an experiment ID skips already stored
-questions for the same configuration and evaluation version.
+For untracked rows, `--resume` without an experiment ID skips only questions with
+the same configuration, evaluation version, and pacing profile. Legacy unpaced
+rows are not silently mixed into a new rate-limited run.
 
 Valid domains:
 
@@ -182,11 +229,20 @@ The runner logs:
 - `hallucination`
 - `total_cost_usd`
 - `total_latency_ms`
+- `execution_latency_ms`
+- `rate_limit_wait_ms`
+- `groq_input_tokens`, `groq_output_tokens`, and `groq_total_tokens`
+- `groq_requests` and `groq_429_retries`
+- `rate_limit_profile` and `rate_limit_policy`
 - `node_metadata`
 - `synthesized_answer`
 - `gold_answer`
 
-`node_metadata` contains per-node model, token estimate, cost estimate, and latency.
+`node_metadata` contains each node's model, provider-reported token usage when
+available, cost estimate, model-service latency, quota wait, retry count, and
+configured output cap. `total_latency_ms` is observed wall-clock latency including
+quota delays; `execution_latency_ms` removes deliberate quota waiting for a fairer
+architecture comparison.
 
 ### Reference-aware evaluation
 
@@ -226,7 +282,8 @@ compare configurations on exactly the same questions with confidence intervals,
 effect sizes, win/tie/loss counts, and paired randomization tests:
 
 ```bash
-python -m evaluation.compare_configs --domain computerScience
+python -m evaluation.compare_configs --domain computerScience \
+  --experiment-id cs-100-groq-free-v1
 ```
 
 Existing stored answers can be upgraded to the current scorecard without any LLM
