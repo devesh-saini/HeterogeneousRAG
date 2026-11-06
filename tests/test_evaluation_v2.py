@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from contextlib import closing
 from pathlib import Path
@@ -8,9 +9,11 @@ from unittest.mock import patch
 
 from data.evaluation.common import QAPair
 from evaluation.metrics import rouge_l_scores, score_answer
+from evaluation.compare_configs import _manifest_question_ids, holm_adjust
 from evaluation.summarize_results import _prepare_analysis_view
 from pipeline.nodes.common import add_node_metadata
 from pipeline.nodes.reranker import _bounded_prompt_chunks
+from pipeline.nodes import retriever
 from pipeline.nodes.verifier import _parse_verification
 from pipeline.rate_limit import (
     GroqRateLimitSettings,
@@ -70,6 +73,43 @@ class AnswerScoringTests(unittest.TestCase):
     def test_qapair_answers_preserves_legacy_primary_answer(self) -> None:
         pair = QAPair("1", "q", "first", [], ("second", "first"), "free_form")
         self.assertEqual(pair.answers, ["second", "first"])
+
+
+class StatisticalCorrectionTests(unittest.TestCase):
+    def test_holm_adjustment_preserves_order_and_monotonicity(self) -> None:
+        adjusted = holm_adjust([0.04, 0.01, 0.03])
+
+        self.assertEqual(adjusted, [0.06, 0.03, 0.06])
+
+    def test_holm_adjustment_caps_values_at_one(self) -> None:
+        self.assertEqual(holm_adjust([0.9, 0.8]), [1.0, 1.0])
+
+    def test_named_comparison_requires_matching_manifests(self) -> None:
+        import sqlite3
+
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.execute(
+                """
+                CREATE TABLE experiment_manifests (
+                    experiment_id TEXT, domain TEXT, config_name TEXT,
+                    question_ids TEXT, scoring_version TEXT
+                )
+                """
+            )
+            connection.executemany(
+                "INSERT INTO experiment_manifests VALUES "
+                "('study', 'cs', ?, '[\"q1\", \"q2\"]', 'v3')",
+                [("a",), ("b",)],
+            )
+            planned = _manifest_question_ids(
+                connection,
+                experiment_id="study",
+                domain="cs",
+                configs=("a", "b"),
+                scoring_version="v3",
+            )
+
+        self.assertEqual(planned, {"q1", "q2"})
 
 
 class VerifierParsingTests(unittest.TestCase):
@@ -157,6 +197,50 @@ class PromptBudgetTests(unittest.TestCase):
         self.assertLessEqual(sum(map(len, bounded)), 18_000)
 
 
+class SourceAwareRetrievalTests(unittest.TestCase):
+    def test_retrieval_is_filtered_to_question_source(self) -> None:
+        class Encodings(list):
+            def tolist(self) -> list:
+                return list(self)
+
+        class Embedder:
+            def encode(self, *_: object, **__: object) -> Encodings:
+                return Encodings([[0.1, 0.2]])
+
+        class Collection:
+            query_options: dict[str, object] = {}
+
+            def query(self, **options: object) -> dict[str, list]:
+                self.query_options = options
+                return {
+                    "documents": [["paper-specific evidence"]],
+                    "metadatas": [[{"source_id": "paper-7"}]],
+                }
+
+        collection = Collection()
+
+        class Client:
+            def get_collection(self, _: str) -> Collection:
+                return collection
+
+        with (
+            patch("chromadb.PersistentClient", return_value=Client()),
+            patch.object(retriever, "get_embedder", return_value=Embedder()),
+        ):
+            result = retriever.retriever_node(
+                {
+                    "domain": "computerScience",
+                    "rewritten_query": "query",
+                    "source_id": "paper-7",
+                    "model_assignment": {"retriever": "test/model"},
+                    "metadata": {},
+                }
+            )
+
+        self.assertEqual(collection.query_options["where"], {"source_id": "paper-7"})
+        self.assertEqual(result["retrieved_chunks"], ["paper-specific evidence"])
+
+
 class GroqRateLimiterTests(unittest.TestCase):
     class FakeTime:
         def __init__(self) -> None:
@@ -213,6 +297,64 @@ class GroqRateLimiterTests(unittest.TestCase):
 
 
 class RunnerPersistenceTests(unittest.TestCase):
+    def test_manifest_is_immutable_and_rejects_sample_drift(self) -> None:
+        try:
+            import evaluation.runner as runner
+            from sqlalchemy import create_engine, text
+            from config.domains import DomainSpec
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"full runtime dependencies unavailable: {exc}")
+
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            vector_path = root / "vectors"
+            vector_path.mkdir()
+            vector_path.joinpath("ingestion_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "domain": "computerScience",
+                        "dataset_id": "test/dataset",
+                        "corpus_sha256": "abc",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            domain = DomainSpec(
+                "computerScience", "test/dataset", vector_path, "test-collection"
+            )
+            engine = create_engine(f"sqlite:///{root / 'results.db'}")
+            with engine.begin() as connection:
+                connection.execute(text(runner.CREATE_MANIFEST_TABLE))
+
+            pair = QAPair("q1", "question", "answer", ["evidence"])
+            arguments = {
+                "experiment_id": "study-1",
+                "domain": "computerScience",
+                "config_name": "homogeneous",
+                "model_assignment": {"synthesizer": "test/model"},
+                "semantic_scoring": False,
+                "requested_question_count": 1,
+                "qa_pairs": [pair],
+                "rate_limit_profile": "test-profile",
+                "rate_limit_policy": {"enabled": False},
+            }
+            with (
+                patch.object(runner, "get_domain", return_value=domain),
+                patch.object(runner, "_code_hash", return_value="code-hash"),
+            ):
+                runner._register_experiment_manifest(engine, **arguments)
+                runner._register_experiment_manifest(engine, **arguments)
+                drifted = {**arguments, "qa_pairs": [QAPair("q2", "changed", "answer", [])]}
+                with self.assertRaisesRegex(ValueError, "different code, corpus, sample"):
+                    runner._register_experiment_manifest(engine, **drifted)
+
+            with engine.begin() as connection:
+                count = connection.execute(
+                    text("SELECT COUNT(*) FROM experiment_manifests")
+                ).scalar_one()
+            self.assertEqual(count, 1)
+            engine.dispose()
+
     def test_v2_result_can_be_inserted(self) -> None:
         try:
             import evaluation.runner as runner
@@ -264,6 +406,7 @@ class RunnerPersistenceTests(unittest.TestCase):
                 patch.object(runner, "RESULTS_DB_PATH", database_path),
                 patch.object(runner, "build_rag_graph", return_value=FakeGraph()),
                 patch.object(runner, "_load_pairs", return_value=[pair]),
+                patch.object(runner, "_register_experiment_manifest"),
             ):
                 runner.run_evaluation(
                     domain="cs",

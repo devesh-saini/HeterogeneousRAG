@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import platform
+import sys
 import time
 from typing import Callable
 
-from config.domains import RESULTS_DB_PATH
+from config.domains import PROJECT_ROOT, RESULTS_DB_PATH, get_domain
 from config.models import (
     GROQ_GPT_OSS_REASONING_EFFORT,
     RERANKER_PROMPT_CHARACTER_BUDGET,
@@ -27,6 +30,7 @@ CREATE_RESULTS_TABLE = """
 CREATE TABLE IF NOT EXISTS results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     question_id TEXT,
+    source_id TEXT,
     domain TEXT,
     config_name TEXT,
     model_assignment TEXT,
@@ -83,6 +87,31 @@ CREATE TABLE IF NOT EXISTS results (
 )
 """
 
+CREATE_MANIFEST_TABLE = """
+CREATE TABLE IF NOT EXISTS experiment_manifests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    config_name TEXT NOT NULL,
+    evaluation_version TEXT NOT NULL,
+    scoring_version TEXT NOT NULL,
+    dataset_id TEXT NOT NULL,
+    model_assignment TEXT NOT NULL,
+    semantic_scoring INTEGER NOT NULL,
+    requested_question_count INTEGER,
+    planned_question_count INTEGER NOT NULL,
+    question_ids TEXT NOT NULL,
+    sample_sha256 TEXT NOT NULL,
+    corpus_manifest TEXT NOT NULL,
+    code_sha256 TEXT NOT NULL,
+    runtime_environment TEXT NOT NULL,
+    rate_limit_profile TEXT NOT NULL,
+    rate_limit_policy TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (experiment_id, domain, config_name)
+)
+"""
+
 try:
     from tqdm import tqdm
 except ModuleNotFoundError:
@@ -110,6 +139,7 @@ def _ensure_db():
     engine = create_engine(f"sqlite:///{RESULTS_DB_PATH}")
     with engine.begin() as conn:
         conn.execute(text(CREATE_RESULTS_TABLE))
+        conn.execute(text(CREATE_MANIFEST_TABLE))
         existing_columns = {
             row[1] for row in conn.execute(text("PRAGMA table_info(results)")).fetchall()
         }
@@ -130,6 +160,215 @@ def _ensure_db():
             )
         )
     return engine
+
+
+def _stable_hash(value: object) -> str:
+    serialized = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _code_hash() -> str:
+    """Fingerprint research code and prompts, including uncommitted files."""
+    digest = hashlib.sha256()
+    paths = sorted(
+        path
+        for path in PROJECT_ROOT.rglob("*")
+        if path.is_file()
+        and (
+            path.suffix in {".py", ".md"}
+            or path.name == "requirements.txt"
+            or "pipeline/prompts" in path.as_posix()
+        )
+        and not any(part.startswith(".") for part in path.relative_to(PROJECT_ROOT).parts)
+        and "site-packages" not in path.parts
+    )
+    for path in paths:
+        digest.update(path.relative_to(PROJECT_ROOT).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _register_experiment_manifest(
+    engine: object,
+    *,
+    experiment_id: str | None,
+    domain: str,
+    config_name: str,
+    model_assignment: dict[str, str],
+    semantic_scoring: bool,
+    requested_question_count: int | None,
+    qa_pairs: list[QAPair],
+    rate_limit_profile: str,
+    rate_limit_policy: dict[str, object],
+) -> None:
+    """Create or validate the immutable protocol record for a named experiment."""
+    if not experiment_id:
+        return
+    from sqlalchemy import text
+
+    domain_spec = get_domain(domain)
+    question_ids = [pair.question_id for pair in qa_pairs]
+    sample_hash = _stable_hash(
+        [
+            {
+                "question_id": pair.question_id,
+                "source_id": pair.source_id,
+                "question": pair.question,
+                "answers": pair.answers,
+                "answer_types": pair.answer_types,
+                "evidence": pair.evidence,
+            }
+            for pair in qa_pairs
+        ]
+    )
+    code_hash = _code_hash()
+    assignment_json = json.dumps(model_assignment, sort_keys=True)
+    policy_json = json.dumps(rate_limit_policy, sort_keys=True)
+    runtime_json = json.dumps(
+        {
+            "python": sys.version,
+            "implementation": platform.python_implementation(),
+            "platform": platform.platform(),
+        },
+        sort_keys=True,
+    )
+    corpus_manifest_path = domain_spec.vectordb_path / "ingestion_manifest.json"
+    if not corpus_manifest_path.exists():
+        raise ValueError(
+            f"Named experiments require a corpus manifest at {corpus_manifest_path}. "
+            f"Re-run `python -m data.ingestion.ingest_{'cs' if domain_spec.name == 'computerScience' else domain_spec.name}` "
+            "before starting a publication run."
+        )
+    corpus_manifest = json.loads(corpus_manifest_path.read_text(encoding="utf-8"))
+    if (
+        corpus_manifest.get("domain") != domain_spec.name
+        or corpus_manifest.get("dataset_id") != domain_spec.dataset_id
+    ):
+        raise ValueError(
+            f"Corpus manifest at {corpus_manifest_path} does not match domain "
+            f"'{domain_spec.name}' and dataset '{domain_spec.dataset_id}'."
+        )
+    corpus_manifest_json = json.dumps(corpus_manifest, sort_keys=True)
+    with engine.begin() as connection:  # type: ignore[attr-defined]
+        shared = connection.execute(
+            text(
+                """
+                SELECT config_name, evaluation_version, scoring_version, dataset_id,
+                       semantic_scoring, requested_question_count,
+                       planned_question_count, sample_sha256, corpus_manifest,
+                       code_sha256, runtime_environment, rate_limit_profile,
+                       rate_limit_policy
+                FROM experiment_manifests
+                WHERE experiment_id = :experiment_id AND domain = :domain
+                """
+            ),
+            {"experiment_id": experiment_id, "domain": domain_spec.name},
+        ).fetchall()
+        shared_expected = (
+            EVALUATION_VERSION,
+            SCORING_VERSION,
+            domain_spec.dataset_id,
+            int(semantic_scoring),
+            requested_question_count,
+            len(question_ids),
+            sample_hash,
+            corpus_manifest_json,
+            code_hash,
+            runtime_json,
+            rate_limit_profile,
+            policy_json,
+        )
+        mismatched = [row[0] for row in shared if tuple(row[1:]) != shared_expected]
+        if mismatched:
+            raise ValueError(
+                f"Experiment '{experiment_id}' has a different code, corpus, sample, "
+                "scoring, environment, or runtime policy for configuration(s): "
+                f"{', '.join(map(str, mismatched))}. Use one fixed protocol or choose "
+                "a new experiment id."
+            )
+
+        existing = connection.execute(
+            text(
+                """
+                SELECT evaluation_version, scoring_version, dataset_id,
+                       model_assignment, semantic_scoring, requested_question_count,
+                       planned_question_count, sample_sha256, corpus_manifest, code_sha256,
+                       runtime_environment, rate_limit_profile, rate_limit_policy
+                FROM experiment_manifests
+                WHERE experiment_id = :experiment_id AND domain = :domain
+                  AND config_name = :config_name
+                """
+            ),
+            {
+                "experiment_id": experiment_id,
+                "domain": domain_spec.name,
+                "config_name": config_name,
+            },
+        ).fetchone()
+        expected = (
+            EVALUATION_VERSION,
+            SCORING_VERSION,
+            domain_spec.dataset_id,
+            assignment_json,
+            int(semantic_scoring),
+            requested_question_count,
+            len(question_ids),
+            sample_hash,
+            corpus_manifest_json,
+            code_hash,
+            runtime_json,
+            rate_limit_profile,
+            policy_json,
+        )
+        if existing:
+            if tuple(existing) != expected:
+                raise ValueError(
+                    f"Experiment '{experiment_id}' / {domain_spec.name} / {config_name} "
+                    "was started under a different code, model, sample, scoring, or "
+                    "runtime policy. Choose a new experiment id rather than mixing protocols."
+                )
+            return
+
+        connection.execute(
+            text(
+                """
+                INSERT INTO experiment_manifests (
+                    experiment_id, domain, config_name, evaluation_version,
+                    scoring_version, dataset_id, model_assignment, semantic_scoring,
+                    requested_question_count, planned_question_count, question_ids,
+                    sample_sha256, corpus_manifest, code_sha256, runtime_environment,
+                    rate_limit_profile, rate_limit_policy
+                ) VALUES (
+                    :experiment_id, :domain, :config_name, :evaluation_version,
+                    :scoring_version, :dataset_id, :model_assignment, :semantic_scoring,
+                    :requested_question_count, :planned_question_count, :question_ids,
+                    :sample_sha256, :corpus_manifest, :code_sha256, :runtime_environment,
+                    :rate_limit_profile, :rate_limit_policy
+                )
+                """
+            ),
+            {
+                "experiment_id": experiment_id,
+                "domain": domain_spec.name,
+                "config_name": config_name,
+                "evaluation_version": EVALUATION_VERSION,
+                "scoring_version": SCORING_VERSION,
+                "dataset_id": domain_spec.dataset_id,
+                "model_assignment": assignment_json,
+                "semantic_scoring": int(semantic_scoring),
+                "requested_question_count": requested_question_count,
+                "planned_question_count": len(question_ids),
+                "question_ids": json.dumps(question_ids),
+                "sample_sha256": sample_hash,
+                "corpus_manifest": corpus_manifest_json,
+                "code_sha256": code_hash,
+                "runtime_environment": runtime_json,
+                "rate_limit_profile": rate_limit_profile,
+                "rate_limit_policy": policy_json,
+            },
+        )
 
 
 def _metadata_totals(metadata: dict) -> dict[str, float | int]:
@@ -196,10 +435,29 @@ def run_evaluation(
     resume: bool = False,
     semantic_scoring: bool = True,
 ) -> None:
-    graph = build_rag_graph()
+    domain = get_domain(domain).name
     qa_pairs = _load_pairs(domain, n_questions)
     engine = _ensure_db()
     rate_limit_settings = get_groq_rate_limit_settings()
+    rate_limit_policy: dict[str, object] = {
+        **rate_limit_settings.as_metadata(),
+        "role_max_output_tokens": ROLE_MAX_OUTPUT_TOKENS,
+        "gpt_oss_reasoning_effort": GROQ_GPT_OSS_REASONING_EFFORT,
+        "reranker_prompt_character_budget": RERANKER_PROMPT_CHARACTER_BUDGET,
+    }
+    _register_experiment_manifest(
+        engine,
+        experiment_id=experiment_id,
+        domain=domain,
+        config_name=config_name,
+        model_assignment=model_assignment,
+        semantic_scoring=semantic_scoring,
+        requested_question_count=n_questions,
+        qa_pairs=qa_pairs,
+        rate_limit_profile=rate_limit_settings.profile,
+        rate_limit_policy=rate_limit_policy,
+    )
+    graph = build_rag_graph()
 
     if experiment_id or resume:
         from sqlalchemy import text
@@ -269,6 +527,7 @@ def run_evaluation(
     for pair in tqdm(qa_pairs, desc=f"{domain}/{config_name}"):
         state: RAGState = {
             "question_id": pair.question_id,
+            "source_id": pair.source_id,
             "original_query": pair.question,
             "domain": domain,
             "config_name": config_name,
@@ -342,7 +601,7 @@ def run_evaluation(
                 text(
                     """
                     INSERT INTO results (
-                        question_id, domain, config_name, model_assignment,
+                        question_id, source_id, domain, config_name, model_assignment,
                         em_score, f1_score, f2_score, rouge_l_f1,
                         semantic_similarity, semantic_model, type_accuracy,
                         answer_precision, answer_recall,
@@ -362,7 +621,7 @@ def run_evaluation(
                         evaluation_version, scoring_version, experiment_id
                     )
                     VALUES (
-                        :question_id, :domain, :config_name, :model_assignment,
+                        :question_id, :source_id, :domain, :config_name, :model_assignment,
                         :em_score, :f1_score, :f2_score, :rouge_l_f1,
                         :semantic_similarity, :semantic_model, :type_accuracy,
                         :answer_precision, :answer_recall,
@@ -385,6 +644,7 @@ def run_evaluation(
                 ),
                 {
                     "question_id": pair.question_id,
+                    "source_id": pair.source_id,
                     "domain": domain,
                     "config_name": config_name,
                     "model_assignment": json.dumps(model_assignment),
@@ -423,16 +683,7 @@ def run_evaluation(
                     "groq_requests": metadata_totals["groq_requests"],
                     "groq_429_retries": metadata_totals["groq_429_retries"],
                     "rate_limit_profile": rate_limit_settings.profile,
-                    "rate_limit_policy": json.dumps(
-                        {
-                            **rate_limit_settings.as_metadata(),
-                            "role_max_output_tokens": ROLE_MAX_OUTPUT_TOKENS,
-                            "gpt_oss_reasoning_effort": GROQ_GPT_OSS_REASONING_EFFORT,
-                            "reranker_prompt_character_budget": (
-                                RERANKER_PROMPT_CHARACTER_BUDGET
-                            ),
-                        }
-                    ),
+                    "rate_limit_policy": json.dumps(rate_limit_policy, sort_keys=True),
                     "node_metadata": json.dumps(metadata),
                     "original_query": pair.question,
                     "rewritten_query": result.get("rewritten_query", ""),

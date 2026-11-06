@@ -12,6 +12,7 @@ class QAPair:
     reference_answers: tuple[str, ...] = ()
     answer_type: str = "unknown"
     reference_answer_types: tuple[str, ...] = ()
+    source_id: str | None = None
 
     @property
     def answers(self) -> list[str]:

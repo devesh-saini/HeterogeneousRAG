@@ -29,18 +29,23 @@ def load_qa_pairs(limit: int | None = None) -> list[QAPair]:
     split = dataset["test"] if "test" in dataset else dataset["train"] if "train" in dataset else next(iter(dataset.values()))
     pairs: list[QAPair] = []
     for i, row in enumerate(split):
+        question_id = str(
+            first_present(row, ["financebench_id", "id", "question_id"], i)
+        )
         question = str(first_present(row, ["question", "query"], ""))
         answer_value = first_present(row, ["answer", "answers"], "")
         answer = normalize_answer_value(answer_value)
         evidence = first_present(row, ["evidence", "context"], "")
         pairs.append(
             QAPair(
-                str(first_present(row, ["financebench_id", "id", "question_id"], i)),
+                question_id,
                 question,
                 answer,
                 _evidence_texts(evidence),
                 reference_answers(answer_value),
                 infer_answer_type(answer),
+                (),
+                question_id,
             )
         )
         if limit is not None and len(pairs) >= limit:

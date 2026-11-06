@@ -1,30 +1,42 @@
 from __future__ import annotations
 
-from datasets import load_dataset
-
-from config.domains import get_domain
-from data.evaluation.common import QAPair, first_present, reference_answers
+from data.evaluation.common import QAPair
+from data.ingestion.sources import load_cuad_documents
 
 
 def load_qa_pairs(limit: int | None = None) -> list[QAPair]:
-    dataset = load_dataset(get_domain("law").dataset_id)
-    split = dataset["test"] if "test" in dataset else dataset["train"] if "train" in dataset else next(iter(dataset.values()))
     pairs: list[QAPair] = []
-    for i, row in enumerate(split):
-        question = str(first_present(row, ["question", "query"], ""))
-        answers = reference_answers(first_present(row, ["answer", "answers"], ""))
-        answer = answers[0] if answers else ""
-        evidence = first_present(row, ["context", "evidence"], "")
-        pairs.append(
-            QAPair(
-                str(first_present(row, ["id", "question_id"], i)),
-                question,
-                answer,
-                [str(evidence)],
-                answers,
-                "extractive",
-            )
-        )
-        if limit is not None and len(pairs) >= limit:
-            break
+    for document in load_cuad_documents("test").get("data", []):
+        if not isinstance(document, dict):
+            continue
+        source_id = str(document.get("title", ""))
+        for paragraph in document.get("paragraphs", []):
+            if not isinstance(paragraph, dict):
+                continue
+            for qa in paragraph.get("qas", []):
+                if not isinstance(qa, dict):
+                    continue
+                answers = tuple(
+                    dict.fromkeys(
+                        str(answer.get("text", "")).strip()
+                        for answer in qa.get("answers", [])
+                        if isinstance(answer, dict) and str(answer.get("text", "")).strip()
+                    )
+                )
+                if not answers:
+                    answers = ("unanswerable",)
+                pairs.append(
+                    QAPair(
+                        str(qa.get("id", len(pairs))),
+                        str(qa.get("question", "")),
+                        answers[0],
+                        list(answers) if answers != ("unanswerable",) else [],
+                        answers,
+                        "extractive" if answers != ("unanswerable",) else "unanswerable",
+                        (),
+                        source_id or None,
+                    )
+                )
+                if limit is not None and len(pairs) >= limit:
+                    return pairs
     return pairs

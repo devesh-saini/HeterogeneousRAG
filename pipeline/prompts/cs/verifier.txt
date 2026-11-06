@@ -18,5 +18,5 @@ Return only JSON with this schema:
 groundedness_verdict is false if any material claim is unsupported by the evidence.
 relevance_verdict is false if the answer does not directly answer the original question, even if its claims are grounded.
 completeness_verdict is false if evidence is sufficient but the answer omits a material part requested by the question.
-An answer that says "Insufficient evidence." is grounded only when the supplied evidence is genuinely insufficient.
+An answer that says "Unanswerable" or "Insufficient evidence." is grounded only when the supplied evidence is genuinely insufficient.
 Do not compare against a hidden gold answer. Judge only the question, answer, and evidence.

@@ -2,6 +2,12 @@
 
 Benchmarking scaffold for comparing homogeneous and heterogeneous model assignment in an agentic RAG pipeline.
 
+For a paper-quality run, follow the pre-specified [research protocol](docs/RESEARCH_PROTOCOL.md).
+Existing unnamed rows are exploratory; confirmatory claims require a shared named
+experiment, a freshly generated corpus manifest, and complete paired results.
+The [pilot audit](docs/PILOT_AUDIT.md) explains why the current local database is
+useful for planning but not yet suitable for a publication claim.
+
 The experiment asks whether assigning stronger models only to high-reasoning roles improves answer quality, hallucination control, latency, and cost relative to a single-model baseline.
 
 ## Pipeline
@@ -61,6 +67,11 @@ Domain configuration lives in `config/domains.py`.
 
 QASPER and BioASQ are loaded as corpus plus QA pairs. CUAD and FinanceBench are treated as context/question/answer triples, with contexts deduplicated during ingestion.
 
+QASPER evaluation carries each question's paper ID into the pipeline and filters
+Chroma retrieval to that paper. This preserves QASPER's closed-document setting
+and prevents apparently relevant passages from unrelated papers entering the
+answer context.
+
 ## Project Layout
 
 ```text
@@ -108,6 +119,11 @@ python -m data.ingestion.ingest_finance
 ```
 
 Each script downloads the Hugging Face dataset, chunks documents, embeds chunks locally with `sentence-transformers/all-MiniLM-L6-v2`, and persists a ChromaDB collection under `vectordb/<domain>/`.
+
+Ingestion is a clean rebuild: it replaces the domain's existing Chroma collection
+so stale chunks cannot survive, then writes `ingestion_manifest.json` containing
+the exact corpus hash, chunking settings, embedding model, dataset ID, and chunk
+count. Re-ingest before starting a named publication experiment.
 
 Re-run ingestion after changes to corpus metadata or train/test split coverage. Retrieval recall for medical uses stored passage IDs, so older medical vector DBs created before metadata support should be regenerated.
 
@@ -283,7 +299,39 @@ effect sizes, win/tie/loss counts, and paired randomization tests:
 
 ```bash
 python -m evaluation.compare_configs --domain computerScience \
-  --experiment-id cs-100-groq-free-v1
+  --experiment-id cs-100-groq-free-v1 \
+  --primary-metric f1_score \
+  --output-json artifacts/cs-100-groq-free-v1-analysis.json
+```
+
+Official F1 is the default pre-specified primary endpoint. The comparison uses its
+raw paired-randomization p-value and applies Holm correction to the complete
+secondary endpoint family. The JSON output contains the exact paired question IDs,
+analysis seed, repetitions, estimates, intervals, effect sizes, and adjusted
+p-values. Choosing a primary endpoint after inspecting results is not confirmatory.
+
+Named comparisons require both configurations to contain every question in the
+manifest. `--allow-incomplete` exists only for exploratory progress checks. The
+groundedness, relevance, and completeness columns are explicitly labelled
+*self-verifier* rates: because the verifier model changes between configurations,
+they are operational telemetry rather than independent evidence of answer quality.
+
+Named runs also create an immutable protocol record. The runner refuses to resume
+under changed code, sample content, model assignment, scoring version, runtime,
+corpus, semantic-scoring setting, or rate-limit policy. Export that record with:
+
+```bash
+python -m evaluation.export_experiment cs-100-groq-free-v1 \
+  --output artifacts/cs-100-groq-free-v1-manifest.json
+```
+
+For independent answer-quality review, create a randomized sheet and keep its key
+hidden from reviewers:
+
+```bash
+python -m evaluation.export_blinded_review \
+  --experiment-id cs-100-groq-free-v1 --domain computerScience \
+  --review-sheet artifacts/review.csv --assignment-key artifacts/review-key.csv
 ```
 
 Existing stored answers can be upgraded to the current scorecard without any LLM

@@ -1,0 +1,152 @@
+{
+  "schema": "heterogeneous-rag-experiment-manifest-v1",
+  "experiment_id": "law-10-source-aware-v1",
+  "manifests": [
+    {
+      "id": 2,
+      "experiment_id": "law-10-source-aware-v1",
+      "domain": "law",
+      "config_name": "heterogeneous",
+      "evaluation_version": "2.0-reference-aware",
+      "scoring_version": "3.0-official-plus",
+      "dataset_id": "theatticusproject/cuad-qa",
+      "model_assignment": {
+        "reranker": "groq/openai/gpt-oss-20b",
+        "retriever": "ollama/qwen2.5:latest",
+        "rewriter": "ollama/qwen2.5:latest",
+        "synthesizer": "groq/openai/gpt-oss-120b",
+        "verifier": "groq/openai/gpt-oss-120b"
+      },
+      "semantic_scoring": 1,
+      "requested_question_count": 10,
+      "planned_question_count": 10,
+      "question_ids": [
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Document Name",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Parties",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Agreement Date",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Effective Date",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Expiration Date",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Renewal Term",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Notice Period To Terminate Renewal",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Governing Law",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Most Favored Nation",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Non-Compete"
+      ],
+      "sample_sha256": "e7c04a2e9818e3d4ee8c22082a697b799ee9bfb23059ffcd9ecc293c79c59325",
+      "corpus_manifest": {
+        "chunk_count": 5399,
+        "chunk_overlap_words": 120,
+        "chunk_size_words": 900,
+        "collection_name": "law",
+        "corpus_sha256": "ca4ba78b15f29ad25e01216568e4502e1130cb577bd519ef3496bc58dcdbd2c5",
+        "created_at_utc": "2026-10-31T17:54:34.158066+00:00",
+        "dataset_id": "theatticusproject/cuad-qa",
+        "domain": "law",
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "python": "3.14.7",
+        "schema": "heterogeneous-rag-corpus-manifest-v1"
+      },
+      "code_sha256": "4a578de9ec1f0af01a5d9e6239680b3a461b186489e58764d387a679bdd3810d",
+      "runtime_environment": {
+        "implementation": "CPython",
+        "platform": "Linux-7.2.3-arch1-2-x86_64-with-glibc2.44",
+        "python": "3.14.7 (main, Aug 10 2026, 07:46:56) [GCC 16.1.1 20260728]"
+      },
+      "rate_limit_profile": "groq-8000tpm-90pct-60s-r4-v1",
+      "rate_limit_policy": {
+        "enabled": true,
+        "gpt_oss_reasoning_effort": "low",
+        "max_429_retries": 4,
+        "max_retry_wait_seconds": 300.0,
+        "profile": "groq-8000tpm-90pct-60s-r4-v1",
+        "reranker_prompt_character_budget": 18000,
+        "retry_buffer_seconds": 1.0,
+        "role_max_output_tokens": {
+          "reranker": 512,
+          "retriever": 1,
+          "rewriter": 256,
+          "synthesizer": 768,
+          "verifier": 768
+        },
+        "tokens_per_minute": 8000,
+        "utilization": 0.9,
+        "window_seconds": 60.0,
+        "working_token_budget": 7200
+      },
+      "created_at": "2026-10-31 18:15:39"
+    },
+    {
+      "id": 1,
+      "experiment_id": "law-10-source-aware-v1",
+      "domain": "law",
+      "config_name": "homogeneous",
+      "evaluation_version": "2.0-reference-aware",
+      "scoring_version": "3.0-official-plus",
+      "dataset_id": "theatticusproject/cuad-qa",
+      "model_assignment": {
+        "reranker": "ollama/qwen2.5:latest",
+        "retriever": "ollama/qwen2.5:latest",
+        "rewriter": "ollama/qwen2.5:latest",
+        "synthesizer": "ollama/qwen2.5:latest",
+        "verifier": "ollama/qwen2.5:latest"
+      },
+      "semantic_scoring": 1,
+      "requested_question_count": 10,
+      "planned_question_count": 10,
+      "question_ids": [
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Document Name",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Parties",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Agreement Date",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Effective Date",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Expiration Date",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Renewal Term",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Notice Period To Terminate Renewal",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Governing Law",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Most Favored Nation",
+        "LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement__Non-Compete"
+      ],
+      "sample_sha256": "e7c04a2e9818e3d4ee8c22082a697b799ee9bfb23059ffcd9ecc293c79c59325",
+      "corpus_manifest": {
+        "chunk_count": 5399,
+        "chunk_overlap_words": 120,
+        "chunk_size_words": 900,
+        "collection_name": "law",
+        "corpus_sha256": "ca4ba78b15f29ad25e01216568e4502e1130cb577bd519ef3496bc58dcdbd2c5",
+        "created_at_utc": "2026-10-31T17:54:34.158066+00:00",
+        "dataset_id": "theatticusproject/cuad-qa",
+        "domain": "law",
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "python": "3.14.7",
+        "schema": "heterogeneous-rag-corpus-manifest-v1"
+      },
+      "code_sha256": "4a578de9ec1f0af01a5d9e6239680b3a461b186489e58764d387a679bdd3810d",
+      "runtime_environment": {
+        "implementation": "CPython",
+        "platform": "Linux-7.2.3-arch1-2-x86_64-with-glibc2.44",
+        "python": "3.14.7 (main, Aug 10 2026, 07:46:56) [GCC 16.1.1 20260728]"
+      },
+      "rate_limit_profile": "groq-8000tpm-90pct-60s-r4-v1",
+      "rate_limit_policy": {
+        "enabled": true,
+        "gpt_oss_reasoning_effort": "low",
+        "max_429_retries": 4,
+        "max_retry_wait_seconds": 300.0,
+        "profile": "groq-8000tpm-90pct-60s-r4-v1",
+        "reranker_prompt_character_budget": 18000,
+        "retry_buffer_seconds": 1.0,
+        "role_max_output_tokens": {
+          "reranker": 512,
+          "retriever": 1,
+          "rewriter": 256,
+          "synthesizer": 768,
+          "verifier": 768
+        },
+        "tokens_per_minute": 8000,
+        "utilization": 0.9,
+        "window_seconds": 60.0,
+        "working_token_budget": 7200
+      },
+      "created_at": "2026-10-31 17:57:58"
+    }
+  ]
+}

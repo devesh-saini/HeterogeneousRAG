@@ -8,6 +8,7 @@ class RAGState(TypedDict, total=False):
     domain: str
     config_name: str
     question_id: str
+    source_id: str | None
 
     rewritten_query: str
     retrieved_chunks: list[str]

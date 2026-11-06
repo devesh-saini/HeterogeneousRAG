@@ -15,4 +15,5 @@ Evidence:
 Give only the shortest direct answer that completely answers the original question.
 Prefer the exact clause span, a list, yes/no, or one concise sentence when sufficient.
 Do not restate the question, quote unrelated evidence, add headings, citations, or legal interpretation.
-If the evidence is insufficient, say exactly "Insufficient evidence."
+If the expected answer type is "unanswerable", say exactly "Unanswerable".
+For any other answer type, if the evidence is insufficient, say exactly "Insufficient evidence."
