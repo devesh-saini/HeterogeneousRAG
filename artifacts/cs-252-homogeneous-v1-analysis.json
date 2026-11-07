@@ -1,0 +1,101 @@
+{
+  "experiment_id": "cs-252-homogeneous-v1",
+  "domain": "computerScience",
+  "configuration": "homogeneous",
+  "question_count": 252,
+  "unique_question_count": 252,
+  "sample": "First 252 questions in the locally available QASPER validation split; not a random sample.",
+  "metrics": {
+    "em_score": {
+      "label": "Exact match",
+      "n": 252,
+      "mean": 0.1349206349206349
+    },
+    "f1_score": {
+      "label": "Token F1",
+      "n": 252,
+      "mean": 0.23006067310181
+    },
+    "f2_score": {
+      "label": "Token F2",
+      "n": 252,
+      "mean": 0.23379831116580058
+    },
+    "rouge_l_f1": {
+      "label": "ROUGE-L F1",
+      "n": 252,
+      "mean": 0.22531730647056766
+    },
+    "semantic_similarity": {
+      "label": "Semantic similarity",
+      "n": 252,
+      "mean": 0.33788879531842086
+    },
+    "retrieval_recall": {
+      "label": "Retrieval recall",
+      "n": 252,
+      "mean": 0.9500661375661376
+    },
+    "correctness_pass": {
+      "label": "Verifier correctness pass",
+      "n": 252,
+      "mean": 0.2896825396825397
+    },
+    "groundedness_pass": {
+      "label": "Verifier groundedness pass",
+      "n": 252,
+      "mean": 0.6904761904761905
+    },
+    "relevance_pass": {
+      "label": "Verifier relevance pass",
+      "n": 252,
+      "mean": 0.9722222222222222
+    },
+    "completeness_pass": {
+      "label": "Verifier completeness pass",
+      "n": 252,
+      "mean": 0.7619047619047619
+    },
+    "verifier_parse_success": {
+      "label": "Verifier parse success",
+      "n": 252,
+      "mean": 1.0
+    },
+    "retry_count": {
+      "label": "Retries",
+      "n": 252,
+      "mean": 0.8373015873015873
+    },
+    "total_latency_ms": {
+      "label": "Observed latency (ms)",
+      "n": 252,
+      "mean": 74578.1746031746
+    },
+    "execution_latency_ms": {
+      "label": "Execution latency (ms)",
+      "n": 252,
+      "mean": 74578.1746031746
+    },
+    "rate_limit_wait_ms": {
+      "label": "Rate-limit wait (ms)",
+      "n": 252,
+      "mean": 0.0
+    },
+    "total_cost_usd": {
+      "label": "Recorded cost (USD)",
+      "n": 252,
+      "mean": 0.0
+    }
+  },
+  "failure_categories": {
+    "unsupported_claims": 78,
+    "low_reference_overlap": 106,
+    "pass": 67,
+    "irrelevant_answer": 1
+  },
+  "limitations": [
+    "Descriptive, single-configuration analysis; no paired comparison or significance test.",
+    "Verifier outcomes are model judgments, not independent human assessments.",
+    "Recorded cost excludes unconfigured pricing and local compute."
+  ]
+}
